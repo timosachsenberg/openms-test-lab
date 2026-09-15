@@ -1,0 +1,2 @@
+# Optional persistent extra dependencies, one pip requirement per line.
+# Example: pandas==2.2.3

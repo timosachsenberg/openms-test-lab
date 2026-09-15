@@ -1,0 +1,94 @@
+name: Windows package lab
+run-name: Windows lab · Python ${{ inputs.python_version }} · ${{ inputs.pyopenms_spec }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: Python version (64-bit)
+        default: '3.12'
+        required: true
+        type: string
+      pyopenms_spec:
+        description: PyPI requirement or direct Windows wheel URL (blank to skip)
+        default: pyopenms
+        type: string
+      extra_packages:
+        description: Extra pip requirements, separated by semicolons (e.g. numpy==2.2.6;pandas)
+        default: ''
+        type: string
+      openms_package:
+        description: OpenMS installer - latest, release tag, HTTPS EXE/MSI/ZIP URL, or blank to skip
+        default: latest
+        type: string
+      debug:
+        description: Open an SSH session after setup and tests, including on failure
+        default: true
+        type: boolean
+      session_minutes:
+        description: Maximum SSH session duration
+        default: '60'
+        type: choice
+        options: ['15', '30', '60', '120']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      LAB_PYOPENMS_SPEC: ${{ inputs.pyopenms_spec }}
+      LAB_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+      LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      LAB_SESSION_MINUTES: ${{ inputs.session_minutes }}
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python_version }}
+          architecture: x64
+      - name: Prepare Python environment
+        run: ./scripts/Initialize-Python.ps1
+      - name: Test pyOpenMS before installing OpenMS
+        if: ${{ !cancelled() }}
+        run: ./scripts/Test-Python.ps1
+      - name: Install and test OpenMS package
+        if: ${{ !cancelled() }}
+        run: ./scripts/Install-OpenMS.ps1
+      - name: Collect diagnostics
+        if: ${{ !cancelled() }}
+        run: ./scripts/Collect-Diagnostics.ps1
+      - name: Download reports before debugging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-lab-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: SSH debugging session
+        if: ${{ !cancelled() && inputs.debug }}
+        timeout-minutes: 125
+        run: |
+          $env:MSYS2_PATH_TYPE = 'inherit'
+          $env:CHERE_INVOKING = '1'
+          $env:MSYSTEM = 'MINGW64'
+          & 'C:\msys64\usr\bin\bash.exe' -l "$($env:GITHUB_WORKSPACE.Replace('\', '/'))/scripts/tmate-session.sh"
+          if ($LASTEXITCODE -ne 0) { throw 'tmate session failed' }
+      - name: Download session exports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-lab-exports-${{ github.run_id }}
+          path: exports/
+          retention-days: 7
+          if-no-files-found: ignore

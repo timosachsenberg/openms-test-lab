@@ -1,0 +1,10 @@
+.venv/
+reports/
+downloads/
+exports/
+continue
+__pycache__/
+*.pyc
+*_ed25519
+*.pem
+*.key
