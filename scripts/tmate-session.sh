@@ -12,9 +12,19 @@ ssh-keygen -lf "$keys"
 cleanup() { tmate -S "$socket" kill-server >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 # -a requires this public key for every client and disables web access.
-tmate -S "$socket" -a "$keys" new-session -d -c "$workspace" \
-    'pwsh.exe -NoLogo -NoProfile -NoExit -File ./scripts/Enter-Lab.ps1'
-timeout 90 tmate -S "$socket" wait tmate-ready
+tmate -v -S "$socket" -a "$keys" \
+    set-option -g default-command 'bash --noprofile --norc' \; \
+    new-session -d -c "$workspace"
+if ! timeout 90 tmate -S "$socket" wait tmate-ready; then
+    echo 'tmate did not become ready. Startup diagnostics:'
+    tmate -S "$socket" show-messages 2>&1 || true
+    tmate -S "$socket" capture-pane -p 2>&1 || true
+    for log in tmate-*.log; do
+        [[ -f "$log" ]] && tail -n 100 "$log"
+    done
+    exit 1
+fi
+tmate -S "$socket" send-keys 'pwsh.exe -NoLogo -NoProfile -NoExit -File ./scripts/Enter-Lab.ps1' C-m
 connection="$(tmate -S "$socket" display -p '#{tmate_ssh}')"
 if [[ -z "$connection" ]]; then echo 'tmate did not return a connection command'; exit 1; fi
 connection="${connection/ssh /ssh -i windows-test-lab_ed25519 }"

@@ -30,7 +30,7 @@ From the folder containing that private key, run the command shown by the workfl
 ssh -i windows-test-lab_ed25519 SESSION@HOST
 ```
 
-Replace `SESSION@HOST` with the exact address from that run. On macOS/Linux, first run `chmod 600 windows-test-lab_ed25519`. On Windows, keep the key in your user profile with access restricted to your user. If prompted, verify the relay host fingerprint against [tmate's published fingerprints](https://github.com/tmate-io/tmate/blob/master/tmate-ssh-client.c).
+Replace `SESSION@HOST` with the exact address from that run. On macOS/Linux, first run `chmod 600 windows-test-lab_ed25519`. On Windows, keep the key in your user profile with access restricted to your user. If prompted, verify the relay host fingerprint against [tmate's published fingerprints](https://github.com/tmate-io/tmate/blob/master/options-table.c).
 
 You land in native PowerShell, with `.venv` active and the OpenMS `bin` directory on `PATH`.
 

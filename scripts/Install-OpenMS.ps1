@@ -27,7 +27,7 @@ Invoke-WebRequest $url -OutFile $package
 $installRoot = 'C:\OpenMS'
 switch ($extension) {
     '.exe' {
-        $process = Start-Process -FilePath $package -ArgumentList "/S /D=$installRoot" -WindowStyle Hidden -Wait -PassThru
+        $process = Start-Process -FilePath $package -ArgumentList "/currentuser /S /D=$installRoot" -WindowStyle Hidden -Wait -PassThru
         if ($process.ExitCode -notin 0, 3010) { throw "OpenMS installer exited with $($process.ExitCode)" }
     }
     '.msi' {
