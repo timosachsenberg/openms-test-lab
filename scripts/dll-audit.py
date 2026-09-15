@@ -96,6 +96,16 @@ def binary(path):
             record['machine'] = hex(pe.FILE_HEADER.Machine)
             record['linker_version'] = f'{pe.OPTIONAL_HEADER.MajorLinkerVersion}.{pe.OPTIONAL_HEADER.MinorLinkerVersion}'
             record['managed'] = bool(pe.OPTIONAL_HEADER.DATA_DIRECTORY[14].VirtualAddress)
+            record['clr_flags'] = pe.get_dword_at_rva(pe.OPTIONAL_HEADER.DATA_DIRECTORY[14].VirtualAddress + 16) if record['managed'] else 0
+            # IL-only AnyCPU assemblies inherit the 64-bit test process architecture.
+            record['load_machine'] = '0x8664' if record['managed'] and record['clr_flags'] & 1 and not record['clr_flags'] & 2 else record['machine']
+            record['manifests'] = []
+            for resource in getattr(getattr(pe, 'DIRECTORY_ENTRY_RESOURCE', None), 'entries', []):
+                if resource.id == 24:
+                    for identity in resource.directory.entries:
+                        for language in identity.directory.entries:
+                            data = language.data.struct
+                            record['manifests'].append(pe.get_data(data.OffsetToData, data.Size).decode('utf-8', 'replace'))
             for attr, delay in [('DIRECTORY_ENTRY_IMPORT', False), ('DIRECTORY_ENTRY_DELAY_IMPORT', True)]:
                 for dep in getattr(pe, attr, []):
                     record['imports'].append({'dll': dep.dll.decode('ascii'), 'delay': delay,
@@ -134,7 +144,8 @@ def is_os_dll(path):
     if VC.match(name) or name == 'ucrtbased.dll':
         return False
     product = binary(str(path)).get('product') or ''
-    return name == 'ucrtbase.dll' or bool(re.search(r'windows.*operating system', product, re.I))
+    # These documented Windows APIs retain Internet Explorer branding in resources.
+    return name in {'ucrtbase.dll', 'wininet.dll', 'urlmon.dll'} or bool(re.search(r'windows.*operating system', product, re.I))
 
 
 def audit():
@@ -168,7 +179,10 @@ def audit():
     for item in records:
         for dependency in item['imports']:
             name = dependency['dll'].lower()
-            available = list(by_owner[item['owner']].get(name, []))
+            available = [p for p in by_owner[item['owner']].get(name, [])
+                         if binary(p).get('load_machine') == item.get('load_machine')]
+            system_dir = SYSTEM if item.get('load_machine') == '0x8664' else SYSTEM.parent / 'SysWOW64'
+            system_candidate = system_dir / name
             provider, classification = None, None
             if name.startswith(('api-ms-', 'ext-ms-')):
                 classification = 'windows-api-set'
@@ -176,10 +190,10 @@ def audit():
                 # Presence alone does not prove the loader searches this folder.
                 provider = next((p for p in available if Path(p).parent == Path(item['path']).parent), available[0])
                 classification = 'bundled-same-directory' if Path(provider).parent == Path(item['path']).parent else 'bundled-other-directory'
-            elif item['owner'] != 'OpenMS-desktop' and name in python_map:
+            elif item['owner'] != 'OpenMS-desktop' and name in python_map and binary(python_map[name]).get('load_machine') == item.get('load_machine'):
                 provider, classification = python_map[name], 'python-runtime'
-            elif (SYSTEM / name).is_file():
-                provider = str(SYSTEM / name)
+            elif system_candidate.is_file() and binary(str(system_candidate)).get('load_machine') == item.get('load_machine'):
+                provider = str(system_candidate)
                 classification = 'preinstalled-msvc-runtime' if VC.match(name) else ('windows-component' if is_os_dll(provider) else 'preinstalled-non-os')
             else:
                 classification = 'not-in-package-python-or-system32'
@@ -193,6 +207,19 @@ def audit():
                 if missing:
                     symbol_issues.append(edge)
             edges.append(edge)
+
+    # Side-by-side presence is evidence of a runner prerequisite, not proof that
+    # the activation context selects it. Preserve unresolved edges for review.
+    sxs_names = {e['dependency'].lower() for e in edges if e['classification'] == 'not-in-package-python-or-system32' and e['msvc']}
+    sxs_matches = []
+    for directory in (SYSTEM.parent / 'WinSxS').glob('*_microsoft.vc*'):
+        if directory.is_dir():
+            for name in sxs_names:
+                path = directory / name
+                if path.is_file():
+                    info = binary(str(path))
+                    sxs_matches.append({k: info.get(k) for k in ('path', 'name', 'machine', 'file_version', 'sha256')})
+    save('side-by-side-runtime-candidates.json', sxs_matches)
 
     python_trace = json.loads((REPORTS / 'python-loaded-modules.json').read_text(encoding='utf-8'))
     runtime = []
@@ -254,6 +281,7 @@ def audit():
         'unresolved_dependencies': [e for e in edges if e['classification'] == 'not-in-package-python-or-system32'],
         'preinstalled_non_os_dependencies': [e for e in edges if e['classification'] == 'preinstalled-non-os'],
         'missing_msvc_exports': symbol_issues, 'loaded_msvc': [r for r in runtime if r['msvc']],
+        'side_by_side_runtime_candidates': sxs_matches,
         'debug_binaries': [r['path'] for r in records if DEBUG.match(r['name'])],
         'system_runtime_changes_after_installer': runtime_changes,
         'python_import_failures': {k:v for k,v in python_trace['imports'].items() if v['status'] != 'passed'},
@@ -261,6 +289,7 @@ def audit():
         'limitations': ['Hosted runner is not a bare Windows image.',
             'PATH isolation leaves System32, the Python runtime and already loaded modules available.',
             'Static bundle candidates may need explicit DLL search directories or preloading.',
+            'Side-by-side runtime candidates are inventoried; activation contexts and registry COM providers are not resolved.',
             'Runtime traces cover the listed Python imports and FileInfo --help, not all plugin or Thermo RAW paths.',
             'Export checks verify names/ordinals in selected MSVC candidates, not complete ABI compatibility.',
             'Managed assemblies and runtimeconfig requirements are recorded; .NET host discovery is not modeled as PE imports.']}
@@ -281,3 +310,4 @@ if __name__ == '__main__':
         result = subprocess.run([sys.executable, __file__, '--phase', 'probe'], env=clean_environment(), cwd=ROOT)
         sys.exit(result.returncode)
     sys.exit(python_probe() if args.phase == 'probe' else audit())
+
