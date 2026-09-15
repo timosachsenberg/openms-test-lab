@@ -34,6 +34,8 @@ Replace `SESSION@HOST` with the exact address from that run. On macOS/Linux, fir
 
 You land in native PowerShell, with `.venv` active and the OpenMS `bin` directory on `PATH`.
 
+For file transfers, use `sftp -i windows-test-lab_ed25519 SESSION@HOST`, or the connection bundle's `Connect-Lab.ps1 -Destination SESSION@HOST -Sftp`. In SFTP, use `put` and `get` to transfer files. For example, `get D:/a/windows-test-lab/windows-test-lab/reports/python-smoke.json` downloads the test report. Prefer SFTP: Windows OpenSSH's `scp` may return exit code 1 after a successful copy through Upterm 0.28.0.
+
 ```powershell
 python -c "import pyopenms; print(pyopenms.__version__)"
 python -m pip check
@@ -60,7 +62,7 @@ Downloaded installers are in `downloads/`, the Python environment is `.venv/`, a
 ## Custom packages and repeatable tests
 
 - Put persistent Python requirements in [`requirements.txt`](requirements.txt).
-- Supply an HTTPS wheel or installer URL for a candidate package. Download GitHub Actions artifacts and attach their extracted package to a release to get a public direct URL, or use SCP/SFTP with the same private key to transfer a local file. Upterm prints example SCP commands in the session log; add `-i windows-test-lab_ed25519` to use your lab key.
+- Supply an HTTPS wheel or installer URL for a candidate package. Download GitHub Actions artifacts and attach their extracted package to a release to get a public direct URL, or use SFTP with the same private key to transfer a local file.
 - Edit [`scripts/smoke.py`](scripts/smoke.py) for additional package tests.
 - Wheel building from source is not automatic; use the installed Visual Studio/CMake tools interactively if needed. This lab tests binary packages rather than duplicating the full OpenMS source CI environment.
 
@@ -71,3 +73,7 @@ Only clients with a private key matching `ssh/authorized_keys` can connect. Ther
 To rotate it, generate a new Ed25519 key locally and replace `ssh/authorized_keys` with its `.pub` contents. Never commit the private key. Changes apply to new runs. The job token has read-only repository permissions and checkout does not retain Git credentials.
 
 This is a public test lab: workflow logs, reports, and exported artifacts must contain only data you intend to publish.
+
+## Verified setup
+
+[Run #3](https://github.com/timosachsenberg/windows-test-lab/actions/runs/34990343042) passed on 2026-09-15 with Windows Server 2025, Python 3.12.10, OpenMS/pyOpenMS 3.5.0, and NumPy 2.5.3. Validation included native package tests, private-key SSH login, rejection of an unrelated key, a SFTP download with matching SHA-256, and export of 14 wheels plus the dependency lock file. The validation session was ended with `Finish-Lab`; start a new run when you need a machine.
