@@ -10,7 +10,7 @@ if (Test-Path $python) {
     & $python -m pip inspect | Set-Content reports/pip-inspect.json
     & $python -m pip debug --verbose 2>&1 | Set-Content reports/pip-debug.txt
 }
-$roots = @('.venv\Lib\site-packages\pyopenms', 'C:\OpenMS') | Where-Object { Test-Path $_ }
+$roots = @('.venv\Lib\site-packages\pyopenms', '.venv\Lib\site-packages\pyopenms.libs', 'C:\OpenMS') | Where-Object { Test-Path $_ }
 $binaries = @($roots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Recurse -File } | Where-Object { $_.Extension -in '.dll', '.pyd', '.exe' })
 $binaries | Select-Object FullName, Length, @{n='FileVersion';e={$_.VersionInfo.FileVersion}} |
     Export-Csv reports/binaries.csv -NoTypeInformation

@@ -20,6 +20,16 @@ An on-demand `windows-2025` machine for testing installed OpenMS packages and py
 
 The workflow is manual only. Setup or test failures remain visible and still allow debugging. A session ends cleanly at its time limit. Standard GitHub-hosted runners in public repositories have free compute; downloadable artifacts are kept for seven days.
 
+## Test an OpenMS PR wheel
+
+Open [Actions → Windows PR wheel lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-pr-wheel.yml), select **Run workflow**, and enter the OpenMS PR number. The initial defaults target PR #10146 on Python 3.12.
+
+The workflow selects the latest successful upstream wheel build for the **current PR head**, downloads `wheels-windows-x64`, verifies the artifact SHA-256, and installs the exact wheel. An optional upstream `run_id` pins a particular build; a run for a different commit is rejected. The upstream PR must already have a successful wheel build and an unexpired artifact.
+
+Checks cover all 15 extension imports with a minimal Windows/Python `PATH`, the `py.typed` marker, UTF-8 and syntax of the packaged `.pyi` files, stubs for all 13 domain modules, PE DLL imports, absence of `zlib1.dll`, and the loaded bundled libcurl version. `expected_curl` defaults to `8.12.1` for PR #10146; change or clear it when testing a PR that intentionally updates curl. The usual NumPy/mzML smoke test also runs. This workflow does not install desktop OpenMS.
+
+Download **pr-wheel-reports** for results and provenance, and **pr-wheel-exports** for the exact tested wheel. Enable **debug** to open the same SSH lab after the checks, including on failure. `./.venv/Scripts/python.exe scripts/verify-pr-wheel.py` repeats the focused checks interactively. These checks validate the built package; incremental CMake rebuild behavior is a separate source-build test.
+
 ## Connect
 
 Use the **private** `windows-test-lab_ed25519` file delivered when this lab was created. It is not stored in this repository or in workflow artifacts. The matching public key is in [`ssh/authorized_keys`](ssh/authorized_keys); no GitHub account SSH key registration is needed.
