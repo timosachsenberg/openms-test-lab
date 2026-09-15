@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       openms_package:
-        description: Desktop OpenMS release tag or HTTPS installer URL (blank skips it)
+        description: Desktop OpenMS release tag or HTTPS installer URL (enter none to skip)
         default: 'release/3.5.0'
         type: string
 
@@ -55,7 +55,7 @@ jobs:
       - name: Trace Python DLL loads before desktop OpenMS is installed
         run: ./.venv/Scripts/python.exe scripts/dll-audit.py --phase python
       - name: Install desktop OpenMS package
-        if: ${{ !cancelled() && inputs.openms_package != '' }}
+        if: ${{ !cancelled() && inputs.openms_package != '' && inputs.openms_package != 'none' }}
         run: ./scripts/Install-OpenMS.ps1
       - name: Inventory runtimes after installation
         if: ${{ !cancelled() }}

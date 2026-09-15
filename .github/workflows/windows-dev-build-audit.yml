@@ -7,7 +7,7 @@ on:
       openms_commit:
         description: Exact OpenMS/OpenMS commit SHA to build (40 hexadecimal characters)
         required: true
-        default: '760f6ab2e0b49c84e4169e14fe71a72e98571070'
+        default: 'dc3083a7961e17c4d7ecc929de68494f6eec5a6f'
         type: string
 
 permissions:
@@ -113,4 +113,3 @@ jobs:
           path: reports/
           retention-days: 14
           if-no-files-found: error
-

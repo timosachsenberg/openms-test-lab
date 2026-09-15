@@ -4,11 +4,13 @@ An on-demand `windows-2025` machine for testing installed OpenMS packages and py
 
 ## Build and audit a standalone OpenMS development installer
 
-Use [Windows development build and DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dev-build-audit.yml) when upstream CI has no installer for the commit you need. Enter the exact 40-character OpenMS commit SHA. The initial default matches the previously audited PR #10146 wheel run's head, `760f6ab2e0b49c84e4169e14fe71a72e98571070`.
+Use [Windows development build and DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dev-build-audit.yml) when upstream CI has no installer for the commit you need. Enter the exact 40-character OpenMS commit SHA. The default is PR #10146's stub-fix commit, `dc3083a7961e17c4d7ecc929de68494f6eec5a6f`.
 
 This workflow builds OpenMS with its own Windows CI recipe, runs the upstream test suite, creates an NSIS installer, and uploads it with the source SHA and checksum. A separate fresh Windows job downloads and verifies that artifact, inventories preinstalled runtimes, installs OpenMS, and audits its binaries and actual `FileInfo` DLL loads. It also records packaged .NET runtime configuration. The build can be resource-intensive; its timeout is three hours. Run it only when you want a new build. It publishes downloadable Actions artifacts, with 14-day retention.
 
-The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an existing pyOpenMS wheel plus a released desktop package. A successful build or startup check is not a clean-machine certification; inspect the runtime inventory and dependency findings.
+The first native build in this repository has no existing compiler cache and can take substantially longer than a cached upstream CI run. Later builds can reuse this repository's cache.
+
+The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an existing pyOpenMS wheel plus an optional released desktop package. A successful build or startup check is not a clean-machine certification; inspect the runtime inventory and dependency findings.
 
 ## Start a package lab
 
@@ -40,7 +42,7 @@ Download **pr-wheel-reports** for results and provenance, and **pr-wheel-exports
 
 ## Audit DLL packaging and runner dependencies
 
-[Windows DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dll-audit.yml) accepts an upstream wheel run ID and an optional desktop OpenMS release or installer URL. It inventories MSVC and .NET runtimes before installation, tests Python imports before installing desktop OpenMS, and records actual loaded DLL paths. It traces `FileInfo --help` through Windows DLL-load debug events, so short-lived DLL loads are captured.
+[Windows DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dll-audit.yml) accepts an upstream wheel run ID and an optional desktop OpenMS release or installer URL. Enter **none** in the desktop-package field to skip desktop installation; clearing the browser field can cause GitHub to apply its default release tag. It inventories MSVC and .NET runtimes before installation, tests Python imports before installing desktop OpenMS, and records actual loaded DLL paths. It traces `FileInfo --help` through Windows DLL-load debug events, so short-lived DLL loads are captured.
 
 The downloadable report contains every installed wheel/desktop PE binary, file version, SHA-256, normal and delayed DLL imports, MSVC imported-symbol checks, managed runtime configuration, and before/after runner runtime inventories. It distinguishes bundled DLL candidates, CPython-supplied runtimes, Windows components, and preinstalled non-OS runtimes. Removing `PATH` entries does **not** remove DLLs from `System32` or CPython; the report therefore does not treat a passing hosted-runner test as proof that the package works on bare Windows. MSVC runtime DLLs in `System32` remain classified as preinstalled redistributables.
 
@@ -103,4 +105,3 @@ This is a public test lab: workflow logs, reports, and exported artifacts must c
 ## Verified setup
 
 [Run #3](https://github.com/timosachsenberg/windows-test-lab/actions/runs/34990343042) passed on 2026-09-15 with Windows Server 2025, Python 3.12.10, OpenMS/pyOpenMS 3.5.0, and NumPy 2.5.3. Validation included native package tests, private-key SSH login, rejection of an unrelated key, a SFTP download with matching SHA-256, and export of 14 wheels plus the dependency lock file. The validation session was ended with `Finish-Lab`; start a new run when you need a machine.
-
