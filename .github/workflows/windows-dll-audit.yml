@@ -1,0 +1,73 @@
+name: Windows DLL audit
+run-name: DLL audit · wheel run ${{ inputs.wheel_run }} · Python ${{ inputs.python_version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      wheel_run:
+        description: OpenMS/OpenMS wheel build run ID
+        default: '34978999259'
+        required: true
+        type: string
+      python_version:
+        description: Python version (64-bit)
+        default: '3.12'
+        required: true
+        type: string
+      openms_package:
+        description: Desktop OpenMS release tag or HTTPS installer URL (blank skips it)
+        default: 'release/3.5.0'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      LAB_UPSTREAM_RUN: ${{ inputs.wheel_run }}
+      LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      LAB_EXTRA_PACKAGES: pefile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Inventory preinstalled runtimes
+        run: ./scripts/Runtime-Baseline.ps1 -Phase before
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python_version }}
+          architecture: x64
+      - name: Download exact upstream Windows wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/Get-AuditWheel.ps1
+      - name: Install wheel and audit tool
+        run: ./scripts/Initialize-Python.ps1
+      - name: Trace Python DLL loads before desktop OpenMS is installed
+        run: ./.venv/Scripts/python.exe scripts/dll-audit.py --phase python
+      - name: Install desktop OpenMS package
+        if: ${{ !cancelled() && inputs.openms_package != '' }}
+        run: ./scripts/Install-OpenMS.ps1
+      - name: Inventory runtimes after installation
+        if: ${{ !cancelled() }}
+        run: ./scripts/Runtime-Baseline.ps1 -Phase after
+      - name: Audit binaries and trace native executable
+        if: ${{ !cancelled() }}
+        run: ./.venv/Scripts/python.exe scripts/dll-audit.py --phase audit
+      - name: Download DLL audit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dll-audit-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
+          if-no-files-found: error

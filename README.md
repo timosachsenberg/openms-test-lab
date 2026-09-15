@@ -30,6 +30,14 @@ Checks cover all 15 extension imports with a minimal Windows/Python `PATH`, the 
 
 Download **pr-wheel-reports** for results and provenance, and **pr-wheel-exports** for the exact tested wheel. Enable **debug** to open the same SSH lab after the checks, including on failure. `./.venv/Scripts/python.exe scripts/verify-pr-wheel.py` repeats the focused checks interactively. These checks validate the built package; incremental CMake rebuild behavior is a separate source-build test.
 
+## Audit DLL packaging and runner dependencies
+
+[Windows DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dll-audit.yml) accepts an upstream wheel run ID and an optional desktop OpenMS release or installer URL. It inventories MSVC and .NET runtimes before installation, tests Python imports before installing desktop OpenMS, and records actual loaded DLL paths. It traces `FileInfo --help` through Windows DLL-load debug events, so short-lived DLL loads are captured.
+
+The downloadable report contains every installed wheel/desktop PE binary, file version, SHA-256, normal and delayed DLL imports, MSVC imported-symbol checks, managed runtime configuration, and before/after runner runtime inventories. It distinguishes bundled DLL candidates, CPython-supplied runtimes, Windows components, and preinstalled non-OS runtimes. Removing `PATH` entries does **not** remove DLLs from `System32` or CPython; the report therefore does not treat a passing hosted-runner test as proof that the package works on bare Windows. MSVC runtime DLLs in `System32` remain classified as preinstalled redistributables.
+
+The wheel and installer versions can differ; source URLs, commit IDs and checksums are recorded separately. This audit does not change system DLLs or uninstall the runner's runtimes. The runtime trace covers the named imports and CLI startup; additional plugins, GUI interactions and Thermo RAW loading need separate coverage.
+
 ## Connect
 
 Use the **private** `windows-test-lab_ed25519` file delivered when this lab was created. It is not stored in this repository or in workflow artifacts. The matching public key is in [`ssh/authorized_keys`](ssh/authorized_keys); no GitHub account SSH key registration is needed.
