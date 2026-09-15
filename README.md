@@ -2,7 +2,15 @@
 
 An on-demand `windows-2025` machine for testing installed OpenMS packages and pyOpenMS dependencies. It includes a separate Python virtual environment, package smoke tests, DLL dependency reports, and an optional native PowerShell session through Upterm.
 
-## Start a lab
+## Build and audit a standalone OpenMS development installer
+
+Use [Windows development build and DLL audit](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-dev-build-audit.yml) when upstream CI has no installer for the commit you need. Enter the exact 40-character OpenMS commit SHA. The initial default matches the previously audited PR #10146 wheel run's head, `760f6ab2e0b49c84e4169e14fe71a72e98571070`.
+
+This workflow builds OpenMS with its own Windows CI recipe, runs the upstream test suite, creates an NSIS installer, and uploads it with the source SHA and checksum. A separate fresh Windows job downloads and verifies that artifact, inventories preinstalled runtimes, installs OpenMS, and audits its binaries and actual `FileInfo` DLL loads. It also records packaged .NET runtime configuration. The build can be resource-intensive; its timeout is three hours. Run it only when you want a new build. It publishes downloadable Actions artifacts, with 14-day retention.
+
+The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an existing pyOpenMS wheel plus a released desktop package. A successful build or startup check is not a clean-machine certification; inspect the runtime inventory and dependency findings.
+
+## Start a package lab
 
 1. Open [Actions → Windows package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-lab.yml).
 2. Select **Run workflow** on `main`.
@@ -95,3 +103,4 @@ This is a public test lab: workflow logs, reports, and exported artifacts must c
 ## Verified setup
 
 [Run #3](https://github.com/timosachsenberg/windows-test-lab/actions/runs/34990343042) passed on 2026-09-15 with Windows Server 2025, Python 3.12.10, OpenMS/pyOpenMS 3.5.0, and NumPy 2.5.3. Validation included native package tests, private-key SSH login, rejection of an unrelated key, a SFTP download with matching SHA-256, and export of 14 wheels plus the dependency lock file. The validation session was ended with `Finish-Lab`; start a new run when you need a machine.
+

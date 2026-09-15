@@ -148,9 +148,9 @@ def is_os_dll(path):
     return name in {'ucrtbase.dll', 'wininet.dll', 'urlmon.dll'} or bool(re.search(r'windows.*operating system', product, re.I))
 
 
-def audit():
+def audit(native_only=False):
     owners, paths, versions = {}, {}, {}
-    for dist in metadata.distributions():
+    for dist in ([] if native_only else metadata.distributions()):
         owner = dist.metadata.get('Name', 'unknown')
         versions[owner] = dist.version
         for file in dist.files or []:
@@ -160,6 +160,8 @@ def audit():
                     owners[str(path).lower()] = owner
                     paths[str(path)] = owner
     native_root = Path('C:/OpenMS')
+    if native_only and not native_root.exists():
+        raise RuntimeError('Native-only audit requires the installed package at C:/OpenMS')
     if native_root.exists():
         for path in native_root.rglob('*'):
             if path.is_file() and path.suffix.lower() in ('.dll', '.pyd', '.exe'):
@@ -221,7 +223,7 @@ def audit():
                     sxs_matches.append({k: info.get(k) for k in ('path', 'name', 'machine', 'file_version', 'sha256')})
     save('side-by-side-runtime-candidates.json', sxs_matches)
 
-    python_trace = json.loads((REPORTS / 'python-loaded-modules.json').read_text(encoding='utf-8'))
+    python_trace = {'after': [], 'imports': {}} if native_only else json.loads((REPORTS / 'python-loaded-modules.json').read_text(encoding='utf-8'))
     runtime = []
 
     def loaded_record(path, process):
@@ -245,6 +247,8 @@ def audit():
     runtime += [loaded_record(p, 'python') for p in python_trace['after']]
     native_trace = None
     fileinfos = list(native_root.rglob('FileInfo.exe')) if native_root.exists() else []
+    if native_only and len(fileinfos) != 1:
+        raise RuntimeError('Native-only audit requires exactly one FileInfo.exe')
     if fileinfos:
         env = clean_environment()
         env['PATH'] = os.pathsep.join(map(str, [fileinfos[0].parent, SYSTEM, SYSTEM.parent]))
@@ -259,9 +263,12 @@ def audit():
             native_trace = {'trace_error': process.stderr, 'exit_code': process.returncode}
 
     runtime_configs = []
-    site = Path(metadata.distribution('pyopenms').locate_file('pyopenms'))
-    for path in site.rglob('*.runtimeconfig.json'):
-        runtime_configs.append({'path': str(path), 'config': json.loads(path.read_text(encoding='utf-8-sig'))})
+    config_roots = [native_root] if native_root.exists() else []
+    if not native_only:
+        config_roots.append(Path(metadata.distribution('pyopenms').locate_file('pyopenms')))
+    for directory in config_roots:
+        for path in directory.rglob('*.runtimeconfig.json'):
+            runtime_configs.append({'path': str(path), 'config': json.loads(path.read_text(encoding='utf-8-sig'))})
     save('dotnet-runtime-requirements.json', runtime_configs)
     save('binary-inventory.json', records)
     save('dependency-edges.json', edges)
@@ -274,7 +281,7 @@ def audit():
     before_map = {r['name'].lower(): r for r in before['runtimes']}
     runtime_changes = [r for r in after['runtimes'] if r['name'].lower() not in before_map or
                        before_map[r['name'].lower()]['sha256'] != r['sha256']]
-    summary = {'binary_counts': dict(Counter(r['owner'] for r in records)), 'python_packages': versions,
+    summary = {'native_only': native_only, 'binary_counts': dict(Counter(r['owner'] for r in records)), 'python_packages': versions,
         'dependency_classifications': {owner: dict(Counter(e['classification'] for e in edges if e['owner'] == owner)) for owner in by_owner},
         'bundled_msvc': [{k:r.get(k) for k in ('owner','path','name','file_version','linker_version','sha256')} for r in records if VC.match(r['name'])],
         'external_msvc_dependencies': [e for e in edges if e['msvc'] and not e['classification'].startswith('bundled')],
@@ -305,9 +312,12 @@ def audit():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--phase', choices=['python', 'probe', 'audit'], required=True)
+    parser.add_argument('--native-only', action='store_true', help='Audit the installed desktop package without importing or requiring pyOpenMS')
     args = parser.parse_args()
+    if args.native_only and args.phase != 'audit':
+        parser.error('--native-only is only valid with --phase audit')
     if args.phase == 'python':
         result = subprocess.run([sys.executable, __file__, '--phase', 'probe'], env=clean_environment(), cwd=ROOT)
         sys.exit(result.returncode)
-    sys.exit(python_probe() if args.phase == 'probe' else audit())
+    sys.exit(python_probe() if args.phase == 'probe' else audit(args.native_only))
 
