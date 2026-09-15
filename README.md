@@ -1,6 +1,6 @@
 # Windows test lab for OpenMS
 
-An on-demand `windows-2025` machine for testing installed OpenMS packages and pyOpenMS dependencies. It includes a separate Python virtual environment, package smoke tests, DLL dependency reports, and an optional native PowerShell session through tmate.
+An on-demand `windows-2025` machine for testing installed OpenMS packages and pyOpenMS dependencies. It includes a separate Python virtual environment, package smoke tests, DLL dependency reports, and an optional native PowerShell session through Upterm.
 
 ## Start a lab
 
@@ -30,14 +30,14 @@ From the folder containing that private key, run the command shown by the workfl
 ssh -i windows-test-lab_ed25519 SESSION@HOST
 ```
 
-Replace `SESSION@HOST` with the exact address from that run. On macOS/Linux, first run `chmod 600 windows-test-lab_ed25519`. On Windows, keep the key in your user profile with access restricted to your user. If prompted, verify the relay host fingerprint against [tmate's published fingerprints](https://github.com/tmate-io/tmate/blob/master/options-table.c).
+Replace `SESSION@HOST` with the exact address from that run. On macOS/Linux, first run `chmod 600 windows-test-lab_ed25519`. On Windows, keep the key in your user profile with access restricted to your user. The first connection asks you to trust the Upterm relay host key; your SSH client records it and detects changes on later connections.
 
 You land in native PowerShell, with `.venv` active and the OpenMS `bin` directory on `PATH`.
 
 ```powershell
 python -c "import pyopenms; print(pyopenms.__version__)"
 python -m pip check
-FileInfo -help
+FileInfo --help
 python -m pip install 'numpy==2.2.6'
 ./scripts/Test-Python.ps1
 Export-LabWheels
@@ -60,13 +60,13 @@ Downloaded installers are in `downloads/`, the Python environment is `.venv/`, a
 ## Custom packages and repeatable tests
 
 - Put persistent Python requirements in [`requirements.txt`](requirements.txt).
-- Supply an HTTPS wheel or installer URL for a candidate package. Download GitHub Actions artifacts and attach their extracted package to a release to get a public direct URL, or transfer a local file over the terminal using your preferred method. tmate is an interactive terminal and does not provide SCP/SFTP.
+- Supply an HTTPS wheel or installer URL for a candidate package. Download GitHub Actions artifacts and attach their extracted package to a release to get a public direct URL, or use SCP/SFTP with the same private key to transfer a local file. Upterm prints example SCP commands in the session log; add `-i windows-test-lab_ed25519` to use your lab key.
 - Edit [`scripts/smoke.py`](scripts/smoke.py) for additional package tests.
 - Wheel building from source is not automatic; use the installed Visual Studio/CMake tools interactively if needed. This lab tests binary packages rather than duplicating the full OpenMS source CI environment.
 
 ## SSH key management
 
-Only clients with a private key matching `ssh/authorized_keys` can connect. The tmate web terminal is disabled. The generated lab key has no passphrase for straightforward use; protect the private file like a password. It grants access to active lab sessions, not to your GitHub account.
+Only clients with a private key matching `ssh/authorized_keys` can connect. There is no web terminal. Upterm 0.28.0 provides native Windows terminal and SCP/SFTP access; its download is pinned and checked with SHA-256. The generated lab key has no passphrase for straightforward use; protect the private file like a password. It grants access to active lab sessions, not to your GitHub account.
 
 To rotate it, generate a new Ed25519 key locally and replace `ssh/authorized_keys` with its `.pub` contents. Never commit the private key. Changes apply to new runs. The job token has read-only repository permissions and checkout does not retain Git credentials.
 

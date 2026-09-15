@@ -40,7 +40,7 @@ $fileInfo = Get-ChildItem -LiteralPath $installRoot -Filter FileInfo.exe -File -
 if (!$fileInfo) { throw "FileInfo.exe was not found under $installRoot" }
 $fileInfo.DirectoryName | Set-Content reports/openms-bin.txt
 $PSNativeCommandUseErrorActionPreference = $false
-& $fileInfo.FullName -help 2>&1 | Tee-Object reports/openms-help.txt
+& $fileInfo.FullName --help 2>&1 | Tee-Object reports/openms-help.txt
 if ($LASTEXITCODE -ne 0) { throw 'OpenMS FileInfo could not start. Inspect DLL diagnostics.' }
 if (Test-Path reports/smoke.mzML) {
     & $fileInfo.FullName -in reports/smoke.mzML 2>&1 | Tee-Object reports/openms-fileinfo.txt

@@ -78,12 +78,7 @@ jobs:
       - name: SSH debugging session
         if: ${{ !cancelled() && inputs.debug }}
         timeout-minutes: 125
-        run: |
-          $env:MSYS2_PATH_TYPE = 'inherit'
-          $env:CHERE_INVOKING = '1'
-          $env:MSYSTEM = 'MINGW64'
-          & 'C:\msys64\usr\bin\bash.exe' -l "$($env:GITHUB_WORKSPACE.Replace('\', '/'))/scripts/tmate-session.sh"
-          if ($LASTEXITCODE -ne 0) { throw 'tmate session failed' }
+        run: ./scripts/Start-SSH.ps1
       - name: Download session exports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
