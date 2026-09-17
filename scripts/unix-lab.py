@@ -31,6 +31,9 @@ def sha(path):
 
 def run(args, log=None, check=True, env=None):
     print("+", " ".join(map(str, args)), flush=True)
+    env = (env or os.environ).copy()
+    env.pop("GH_TOKEN", None)
+    env.pop("GITHUB_TOKEN", None)
     result = subprocess.run(list(map(str, args)), cwd=ROOT, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if log:
@@ -105,8 +108,8 @@ def upstream_wheel(run_id):
     build = api(f"/actions/runs/{run_id}")
     if build["path"].split("@")[0] != ".github/workflows/pyopenms-wheels-cibuildwheel.yml":
         raise ValueError("Expected the OpenMS pyopenms-wheels-cibuildwheel workflow")
-    if build["conclusion"] != "success":
-        raise ValueError("Upstream wheel run must have succeeded")
+    if build["status"] != "completed":
+        raise ValueError("Upstream wheel run must be completed")
     artifact_name = "wheels-" + ("macos" if MAC else "linux") + ("-arm64" if ARM else "-x64")
     artifacts = api(f"/actions/runs/{run_id}/artifacts?per_page=100")["artifacts"]
     matches = [item for item in artifacts if item["name"] == artifact_name and not item["expired"]]
@@ -137,12 +140,16 @@ def upstream_wheel(run_id):
         with bundle.open(member) as source, wheel.open("wb") as target:
             shutil.copyfileobj(source, target)
     source = {"upstream_run": build["html_url"], "head_sha": build["head_sha"],
+              "upstream_conclusion": build["conclusion"],
               "head_branch": build["head_branch"], "event": build["event"],
               "pull_requests": build.get("pull_requests", []), "artifact": artifact_name,
               "artifact_id": artifact["id"], "artifact_sha256": digest,
               "wheel": wheel.name, "wheel_sha256": sha(wheel),
               "note": "For pull_request runs, head_sha is the PR head; the upstream checkout may be a generated merge commit."}
     write("wheel-source.json", source)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+            out.write(f"\n## Upstream wheel\n\nRun: {build['html_url']}\n\nUpstream conclusion: **{build['conclusion']}**. This lab tests the selected artifact independently; an available wheel does not imply all upstream tests passed.\n")
     shutil.copy2(wheel, EXPORTS / wheel.name)
     shutil.copy2(REPORTS / "wheel-source.json", EXPORTS / "wheel-source.json")
     return str(wheel)

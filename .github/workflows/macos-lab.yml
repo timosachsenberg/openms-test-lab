@@ -27,7 +27,7 @@ on:
         default: latest
         type: string
       wheel_run_id:
-        description: Optional successful OpenMS wheel run ID; overrides pyopenms_spec
+        description: Optional completed OpenMS wheel run ID; overrides pyopenms_spec
         default: ''
         type: string
       debug:
