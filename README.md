@@ -1,4 +1,16 @@
-# Windows test lab for OpenMS
+# OpenMS package test labs
+
+On-demand Windows, macOS and Linux runners for testing OpenMS packages and pyOpenMS dependencies, with optional SSH access using the same lab key.
+
+| Platform | Start here |
+| --- | --- |
+| Windows | [Windows package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/windows-lab.yml) |
+| macOS (Apple Silicon or Intel) | [macOS package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/macos-lab.yml) |
+| Linux (x64 or ARM64) | [Linux package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/linux-lab.yml) |
+
+See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inputs, SSH, exports and dependency reports. The sections below describe Windows.
+
+## Windows lab
 
 An on-demand `windows-2025` machine for testing installed OpenMS packages and pyOpenMS dependencies. It includes a separate Python virtual environment, package smoke tests, DLL dependency reports, and an optional native PowerShell session through Upterm.
 

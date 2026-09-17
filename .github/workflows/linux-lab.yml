@@ -1,0 +1,124 @@
+name: Linux package lab
+run-name: Linux lab · ${{ inputs.runner }} · Python ${{ inputs.python_version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner image and CPU architecture
+        type: choice
+        default: ubuntu-24.04
+        options: ['ubuntu-24.04', 'ubuntu-24.04-arm', 'ubuntu-22.04']
+      python_version:
+        description: Python version (3.11 or newer recommended)
+        default: '3.12'
+        required: true
+        type: string
+      pyopenms_spec:
+        description: PyPI requirement or HTTPS wheel URL; none to skip
+        default: pyopenms
+        type: string
+      extra_packages:
+        description: Extra pip requirements separated by semicolons
+        default: ''
+        type: string
+      openms_package:
+        description: OpenMS release tag, latest, HTTPS DEB URL, or none to skip
+        default: latest
+        type: string
+      wheel_run_id:
+        description: Optional successful OpenMS wheel run ID; overrides pyopenms_spec
+        default: ''
+        type: string
+      debug:
+        description: Open SSH after checks, including on failure
+        default: true
+        type: boolean
+      session_minutes:
+        description: Maximum SSH session duration
+        default: '60'
+        type: choice
+        options: ['5', '15', '30', '60', '120']
+      export_wheels:
+        description: Download installed Python packages into the exports artifact
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  lab:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      LAB_PYOPENMS_SPEC: ${{ inputs.pyopenms_spec }}
+      LAB_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+      LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      LAB_WHEEL_RUN_ID: ${{ inputs.wheel_run_id }}
+      LAB_SESSION_MINUTES: ${{ inputs.session_minutes }}
+      PYTHONUNBUFFERED: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Inventory preinstalled runner software
+        run: python3 scripts/unix-lab.py baseline-before
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ inputs.python_version }}
+      - name: Prepare Python packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/unix-lab.py setup
+      - name: Test Python packages before desktop installation
+        if: ${{ !cancelled() }}
+        run: python3 scripts/unix-lab.py python
+      - name: Inventory after Python setup
+        if: ${{ !cancelled() }}
+        run: python3 scripts/unix-lab.py baseline-python
+      - name: Install and test desktop OpenMS
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/unix-lab.py native
+      - name: Inventory after native installation
+        if: ${{ !cancelled() }}
+        run: python3 scripts/unix-lab.py baseline-after
+      - name: Collect native library diagnostics
+        if: ${{ !cancelled() }}
+        run: python3 scripts/unix-lab.py diagnostics
+      - name: Export Python wheels
+        if: ${{ !cancelled() && inputs.export_wheels }}
+        run: python3 scripts/unix-lab.py export
+      - name: Download reports before debugging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-lab-setup-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+      - name: SSH debugging session
+        if: ${{ !cancelled() && inputs.debug }}
+        timeout-minutes: 125
+        run: python3 scripts/start-unix-ssh.py
+      - name: Download final reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-lab-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+      - name: Download session exports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-lab-exports-${{ github.run_id }}
+          path: exports/
+          retention-days: 7
+          if-no-files-found: ignore
