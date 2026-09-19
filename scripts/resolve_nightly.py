@@ -109,6 +109,12 @@ def desktop_suffix():
     return "-Debian-Linux-aarch64.deb" if ARM else "-Debian-Linux-x86_64.deb"
 
 
+def build_date(name):
+    """The commit date the packager put in the file name, e.g. ...-nightly-2026-09-19-Win64.exe."""
+    stamp = re.search(r"-(\d{4})-(\d{2})-(\d{2})-", name)
+    return tuple(int(part) for part in stamp.groups()) if stamp else (0, 0, 0)
+
+
 def desktop():
     suffix = desktop_suffix()
     folders = sorted(set(re.findall(r'href="(\d{4}\.\d{2}\.\d{2})/"', fetch(DESKTOP_INDEX))),
@@ -121,13 +127,21 @@ def desktop():
         matches = sorted({name for name in re.findall(r'href="([^"?/]+)"', listing)
                           if name.endswith(suffix)})
         tried.append(folder)
-        if len(matches) == 1:
-            return {"kind": "desktop", "folder": folder, "file": matches[0],
-                    "url": f"{DESKTOP_INDEX}{folder}/{urllib.parse.quote(matches[0])}",
-                    "is_newest": folder == folders[0], "searched": tried,
-                    "index": DESKTOP_INDEX}
-        if len(matches) > 1:
-            raise RuntimeError(f"{folder} holds {len(matches)} packages ending {suffix}: {matches}")
+        if not matches:
+            continue
+        # A dated folder normally holds one build, but the upload never deletes, so a
+        # re-run on the same day leaves the earlier one behind. Take the newest build.
+        newest = max(build_date(name) for name in matches)
+        contenders = [name for name in matches if build_date(name) == newest]
+        if len(contenders) > 1:
+            raise RuntimeError(
+                f"{folder} holds {len(contenders)} packages ending {suffix} that share a "
+                f"build date: {contenders}")
+        return {"kind": "desktop", "folder": folder, "file": contenders[0],
+                "url": f"{DESKTOP_INDEX}{folder}/{urllib.parse.quote(contenders[0])}",
+                "is_newest": folder == folders[0], "searched": tried,
+                "superseded": [name for name in matches if name != contenders[0]],
+                "index": DESKTOP_INDEX}
     raise RuntimeError(
         f"No nightly package ending {suffix} in the {len(tried)} most recent folders ({', '.join(tried)}). "
         "macOS Intel nightlies are not published; pass an explicit URL or 'none'."
