@@ -1,6 +1,8 @@
 # OpenMS package test labs
 
-On-demand Windows, macOS and Linux runners for testing OpenMS packages and pyOpenMS dependencies, with optional SSH access using the same lab key.
+`openms-test-lab` provides on-demand Windows, macOS and Linux runners for testing OpenMS packages and pyOpenMS dependencies, with optional SSH access using the same lab key.
+
+This repository was previously named `windows-test-lab`. All links and runner paths below use the current name; only the SSH key file keeps the old one.
 
 | Platform | Start here |
 | --- | --- |
@@ -11,6 +13,116 @@ On-demand Windows, macOS and Linux runners for testing OpenMS packages and pyOpe
 See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inputs, SSH, exports and dependency reports. The sections below describe Windows.
 
 [Package audit: OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) records what these labs and a full static analysis of every published 3.5.0 artifact found, with the lab run IDs behind each result.
+
+## Release test matrix
+
+These nine runs are the minimum set for signing off a release. Each one was executed in full against
+`release/3.5.0` on 2026-09-19; the results — six passes and three failures — are recorded in
+[PACKAGE-AUDIT-3.5.0.md](PACKAGE-AUDIT-3.5.0.md), with the run IDs.
+
+Set **debug** to `false` for all of them so they run unattended, and pin `pyopenms_spec` to the exact
+version under test (`pyopenms==3.5.0`), never the bare `pyopenms`, so the run is reproducible after
+the next PyPI upload.
+
+| # | Workflow | Runner | Python | `openms_package` | What only this run covers |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Windows package lab | `windows-2025` | 3.12 | `latest` | `win_amd64` wheel and the `Win64.exe` installer |
+| 2 | Windows package lab | `windows-2025` | 3.14 | *(single space)* | newest CPython on Windows, wheel only |
+| 3 | macOS package lab | `macos-15` | 3.12 | `latest` | Apple Silicon wheel and the `macOS-Silicon.pkg` |
+| 4 | macOS package lab | `macos-15-intel` | 3.12 | `latest` | Intel wheel and the `macOS-Intel.pkg` |
+| 5 | macOS package lab | `macos-15` | 3.14 | `none` | newest CPython on Apple Silicon |
+| 6 | Linux package lab | `ubuntu-24.04` | 3.12 | `latest` | `manylinux` x86_64 wheel and the x86_64 DEB |
+| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `latest` | `manylinux` aarch64 wheel and the aarch64 DEB |
+| 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `latest` | oldest supported LTS — proves the `manylinux` glibc floor is reachable |
+| 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `none` | newest CPython on Linux |
+
+Skipping the desktop package is spelled differently per lab, and getting it wrong wastes a run: the
+Linux and macOS labs take the literal **`none`**, while the Windows lab treats only a blank or
+whitespace value as "skip" and would try to resolve a release tag called `none`. Clearing the field
+in the browser form can make GitHub re-apply the workflow default, so pass a single space instead.
+
+Runs 1, 3, 4, 6, 7 and 8 exercise both products together, which is the combination users actually
+install. Runs 2, 5 and 9 exist because the newest CPython is where wheel builds break first.
+
+### What every run asserts
+
+Setup, before any test runs:
+
+- pip resolves and installs the requested wheel for the runner's interpreter and platform tags;
+- for `wheel_run_id` runs, the upstream artifact's SHA-256 is verified before extraction and the
+  wheel's tags are checked against the interpreter's supported tags;
+- on macOS and Linux, a release asset's published digest is verified after download, and a
+  mismatch fails the run; the Windows lab records the installer's SHA-256 in
+  `reports/openms-package.json` but does not yet compare it against the published digest;
+- exactly one matching release asset exists for the platform — an ambiguous release fails here.
+
+Python package checks (`scripts/smoke.py`, plus `scripts/unix-probe.py` on macOS/Linux), run **before**
+the desktop package is installed and with library-search overrides stripped from the environment:
+
+- `python -m pip check` reports a consistent dependency set;
+- `import pyopenms` succeeds and reports its version and module path;
+- `AASequence.fromString('PEPTIDE').getMonoWeight()` lands in the expected mass window;
+- a NumPy `float64` m/z and `float32` intensity array round-trips through `MSSpectrum.set_peaks`,
+  `MzMLFile().store`, `MzMLFile().load` and `get_peaks` with values preserved;
+- **macOS and Linux only:** every packaged `.pyi` stub parses as UTF-8 Python (`ast.parse`) — a stub
+  that fails fails the run;
+- **macOS and Linux only:** the process's actually loaded libraries are captured, from
+  `/proc/self/maps` on Linux and the dyld image list on macOS, so bundled, CPython, system-package
+  and Homebrew copies can be told apart.
+
+The Windows lab runs the same smoke test but not the stub parse or the load capture; **Windows PR
+wheel lab** covers those for a wheel, including imports under a minimal `PATH`.
+
+Desktop package checks:
+
+- the package installs non-interactively — `installer -pkg` on macOS, `apt-get install` on Linux,
+  silent NSIS/MSI on Windows — and a non-zero exit fails the run;
+- the installed `FileInfo` is located — through the package manager's own file list on macOS and
+  Linux, where finding anything other than exactly one fails the run, and by searching
+  `C:\OpenMS` on Windows;
+- `FileInfo --help` starts and exits zero, traced under `LD_DEBUG=libs` or `DYLD_PRINT_LIBRARIES`;
+- `FileInfo -in reports/smoke.mzML` reads the file the Python step wrote, so the two products are
+  checked against one another rather than only against themselves.
+
+Inventory collected for every run, to make a later diff meaningful:
+
+- on macOS and Linux, three runner baselines — before setup, after Python setup, after native
+  installation — covering installed packages, the loader cache or package receipts, libc version
+  and .NET runtimes (the Windows equivalent lives in **Windows DLL audit**, which brackets the
+  installation with MSVC and .NET runtime inventories);
+- every installed binary: path, size and SHA-256 on macOS and Linux; path, size and file version on
+  Windows, where SHA-256 comes from **Windows DLL audit** instead;
+- `readelf -d` and `ldd` on Linux, `otool -L` and `otool -l` on macOS, and `dumpbin /DEPENDENTS` on
+  Windows for the extension modules, `FileInfo.exe` and `OpenMS.dll` when a Visual Studio toolchain
+  is present on the runner;
+- exact installed package versions, `pip check`, the wheel compatibility tags from `pip debug
+  --verbose`, and a `pip freeze` lock file (`requirements-lock.txt`) that pins the whole environment.
+
+A passing run is a smoke-test result on a hosted runner that already has many dependencies
+preinstalled. It is not a clean-machine certification: read the dependency report before concluding
+a package is self-contained.
+
+### Checks that are not automated here
+
+The 3.5.0 audit combined the runs above with static analysis of every published artifact. These are
+not yet wired into a workflow, so run them by hand against the candidate artifacts. Each one caught
+at least one finding that no lab run surfaced:
+
+| Check | Tool | Catches |
+| --- | --- | --- |
+| Wheel hash matches PyPI; nothing yanked | `hashlib` vs the PyPI JSON API | tampered or re-uploaded files |
+| `RECORD` completeness and per-file hashes | `zipfile` + `base64`/`sha256` | truncated or repacked wheels |
+| `METADATA` has `Requires-Python` and a license file | `twine check`, manual grep | unusable resolver metadata, license non-compliance |
+| Wheel platform tags match the intended floor | filename inspection across releases | a silently raised macOS or glibc requirement |
+| Mach-O `LC_BUILD_VERSION` minimum OS per object | `macholib` | deployment-target drift behind a correct-looking tag |
+| `manylinux` policy compliance | `auditwheel show` | unbundled non-whitelisted libraries |
+| Maximum `GLIBC_` symbol vs the declared `libc6` dependency | `readelf -V` over every ELF | a DEB that installs and then cannot start |
+| DEB file list vs distribution-owned paths | `dpkg-deb -c`, `dpkg -S` | unpack conflicts such as `/usr/include/sqlite3.h` |
+| DEB `md5sums` diffed between same-version assets | `dpkg-deb --ctrl-tarfile` | two different builds published under one version |
+| Bundled dependency versions across all artifacts | `strings`, PE version resources | Qt/OpenSSL/zlib drift and known-vulnerable copies |
+| Installer signatures | `pefile` security directory, XAR TOC `<signature>` | SmartScreen and Gatekeeper blocks |
+| Runtime namespace diffed against the shipped stubs | `dir()` vs `ast.parse` | undeclared public names, leaked imports |
+| Stub compilation with warnings as errors | `compile()` under `-W error` | invalid escape sequences that will become syntax errors |
 
 ## Windows lab
 
@@ -64,7 +176,7 @@ The wheel and installer versions can differ; source URLs, commit IDs and checksu
 
 ## Connect
 
-Use the **private** `windows-test-lab_ed25519` file delivered when this lab was created. It is not stored in this repository or in workflow artifacts. The matching public key is in [`ssh/authorized_keys`](ssh/authorized_keys); no GitHub account SSH key registration is needed.
+Use the **private** `windows-test-lab_ed25519` file delivered when this lab was created. It still carries the repository's former name and is unchanged and valid; rename it locally only if you also update the commands below. It is not stored in this repository or in workflow artifacts. The matching public key is in [`ssh/authorized_keys`](ssh/authorized_keys); no GitHub account SSH key registration is needed.
 
 From the folder containing that private key, run the command shown by the workflow:
 

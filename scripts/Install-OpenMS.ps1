@@ -10,7 +10,7 @@ if ($source -match '^https://') {
     $url = $source
 } else {
     $endpoint = if ($source -eq 'latest') { 'latest' } else { 'tags/' + [uri]::EscapeDataString($source) }
-    $release = Invoke-RestMethod "https://api.github.com/repos/OpenMS/OpenMS/releases/$endpoint" -Headers @{ 'User-Agent' = 'windows-test-lab' }
+    $release = Invoke-RestMethod "https://api.github.com/repos/OpenMS/OpenMS/releases/$endpoint" -Headers @{ 'User-Agent' = 'openms-test-lab' }
     $assets = @($release.assets | Where-Object { $_.name -match 'Win64\.exe$' })
     if ($assets.Count -ne 1) { throw 'Expected exactly one Win64 installer in the selected release.' }
     $url = $assets[0].browser_download_url
