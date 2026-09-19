@@ -84,10 +84,15 @@ def wheel():
         if wheel_compatible(name, minor):
             candidates.append((version_key(version), version, href, digest, name))
     if not candidates:
-        available = sorted({e[0].rsplit("/", 1)[-1].split("-", 2)[2] for e in entries})
+        names = [href.rsplit("/", 1)[-1] for href, _ in entries if href.endswith(".whl")]
+        newest = max(version_key(name.split("-")[1]) for name in names)
+        platforms = sorted({name[: -len(".whl")].split("-")[-1] for name in names
+                            if version_key(name.split("-")[1]) == newest})
+        hint = (" macOS Intel nightlies are not published; pass an explicit URL or 'none'."
+                if MAC and not ARM else "")
         raise RuntimeError(
             f"No nightly wheel for CPython 3.{minor} on this platform. "
-            f"Tags published: {', '.join(available[:12])}"
+            f"Newest nightly builds for: {', '.join(platforms)}.{hint}"
         )
     _, version, href, digest, name = max(candidates)
     # pip verifies the fragment itself, so the digest is enforced rather than only recorded.
