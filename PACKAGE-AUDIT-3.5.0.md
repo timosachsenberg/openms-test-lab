@@ -25,7 +25,7 @@ so it can be re-checked independently.
 | 3 | DEB declares `libc6 (>= 2.28)`, binaries need glibc 2.34 | 3 DEBs | **High** |
 | 4 | Two different ARM64 DEBs published under the same name/version | 2 DEBs | **High** |
 | 5 | Neither desktop installer is signed | .exe, .pkg | **High** |
-| 6 | DEB vendors ~103 system libraries into flat `/usr/lib`, incl. OpenSSL 3.0.2, zlib 1.2.11 | 3 DEBs | **High** |
+| 6 | DEB vendors 54 system libraries into flat `/usr/lib`, incl. OpenSSL 3.0.2, zlib 1.2.11 | 3 DEBs | **High** |
 | 7 | Three different Qt and OpenSSL versions across one release; Linux wheels ship Qt 6.6.2 (CVE-2024-39936) | wheels, DEB | **High** |
 | 8 | No `Requires-Python` in any wheel | 25 wheels | Medium |
 | 9 | No license file shipped in any wheel | 25 wheels | Medium |
@@ -155,10 +155,10 @@ the installer wrapper is left unsigned, so users still hit the warning.
 
 *Fix:* `productsign` + `notarytool` for the `.pkg`; `signtool` for the `.exe`.
 
-### 6. The DEB vendors ~103 system libraries into flat `/usr/lib`
+### 6. The DEB vendors 54 system libraries into flat `/usr/lib`
 
-Alongside `libOpenMS.so`, the DEB installs 103 third-party shared objects **directly into
-`/usr/lib`** under their standard SONAMEs, including:
+Alongside its own three libraries, the DEB installs **54 distinct third-party libraries — 100 files and
+version symlinks — directly into `/usr/lib`**, under their standard SONAMEs, including:
 
 `libcrypto.so.3`, `libssl.so.3`, `libz.so.1.2.11`, `libgnutls.so.30`, `libnettle.so.8`,
 `libhogweed.so.6`, `libtasn1.so.6`, `libp11-kit.so.0`, `libkrb5.so.3`, `libgssapi_krb5.so.2`,
@@ -229,8 +229,8 @@ Python version at all.
 No wheel contains a `LICENSE`/`COPYING` file, and `METADATA` carries
 `License: http://opensource.org/licenses/BSD-3-Clause` — a URL where an SPDX expression belongs, with
 no `License-File` entries. BSD-3-Clause requires the copyright notice to accompany binary
-redistribution, and each wheel additionally bundles 14–134 third-party libraries (Qt, OpenSSL, Coin-OR,
-Abseil, Arrow, ICU, Kerberos, …) whose license texts are likewise absent.
+redistribution, and each wheel additionally bundles between 14 and 134 shared libraries (Qt, OpenSSL,
+Coin-OR, Abseil, Arrow, ICU, Kerberos, …) whose license texts are likewise absent.
 
 ### 10. `pyopenms.SysInfo` is a leaked Linux `struct sysinfo`
 
@@ -364,7 +364,7 @@ Reported so the next audit does not repeat this work:
   runtime-dispatched Arrow/Parquet kernels (`arrow::internal::unpack32_avx512`, `xsimd::avx2`,
   `parquet::internal::FindMinMaxAvx2`), with CPUID dispatch present. No unconditional AVX use — no
   SIGILL risk on older x86-64 CPUs.
-- **Functional behaviour.** A 18-check functional suite (peptide masses, mzML round-trip, gzip-mzML
+- **Functional behaviour.** An 18-check functional suite (peptide masses, mzML round-trip, gzip-mzML
   reading, isotope distributions, theoretical spectra, NumPy interop, DataFrame export, idXML
   round-trip, parameter handling, ModificationsDB with 3,612 modifications) passes on Linux x86_64.
   The only failures were findings 13 and 10.
