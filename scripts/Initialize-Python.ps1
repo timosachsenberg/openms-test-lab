@@ -10,6 +10,14 @@ $requirements = [System.Collections.Generic.List[string]]::new()
 # steps so the smoke test sees a blank spec and reports 'skipped' instead of failing to import.
 $pyopenmsSpec = if ($env:LAB_PYOPENMS_SPEC) { $env:LAB_PYOPENMS_SPEC.Trim() } else { '' }
 if ($pyopenmsSpec -eq 'none') { $pyopenmsSpec = '' }
+if ($pyopenmsSpec -eq 'nightly') {
+    # Same selection rule as the macOS and Linux labs; the URL carries a sha256 fragment
+    # that pip verifies.
+    $nightly = & $python scripts/resolve_nightly.py wheel | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the current nightly pyOpenMS wheel.' }
+    $nightly | ConvertTo-Json | Set-Content reports/python-selection.json
+    $pyopenmsSpec = $nightly.url
+}
 if ($env:GITHUB_ENV) {
     if ($pyopenmsSpec -match '[\r\n]') { throw 'Package requirement must be a single line.' }
     "LAB_PYOPENMS_SPEC=$pyopenmsSpec" | Add-Content $env:GITHUB_ENV

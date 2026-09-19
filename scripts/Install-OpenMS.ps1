@@ -12,7 +12,13 @@ if ([string]::IsNullOrWhiteSpace($source) -or $source.Trim() -eq 'none') {
 $source = $source.Trim()
 $expected = $null
 $releaseTag = $null
-if ($source -match '^https://') {
+$nightly = $null
+if ($source -eq 'nightly') {
+    # Nightly installers are on archive.openms.de, not in a GitHub release.
+    $nightly = & python scripts/resolve_nightly.py desktop | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or -not $nightly) { throw 'Could not resolve the current nightly OpenMS installer.' }
+    $url = $nightly.url
+} elseif ($source -match '^https://') {
     $url = $source
 } else {
     $endpoint = if ($source -eq 'latest') { 'latest' } else { 'tags/' + [uri]::EscapeDataString($source) }
@@ -38,7 +44,8 @@ if ($expected) {
     $verified = $true
 }
 $record = [ordered]@{ status = 'downloaded'; url = $url; release = $releaseTag; sha256 = $hash
-                      expected_digest = $expected; digest_verified = $verified; file = $name }
+                      expected_digest = $expected; digest_verified = $verified; file = $name
+                      nightly = $nightly }
 $record | ConvertTo-Json | Set-Content reports/openms-package.json
 $installRoot = 'C:\OpenMS'
 switch ($extension) {

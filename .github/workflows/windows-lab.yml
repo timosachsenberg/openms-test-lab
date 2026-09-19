@@ -10,16 +10,16 @@ on:
         required: true
         type: string
       pyopenms_spec:
-        description: PyPI requirement or direct Windows wheel URL (none to skip)
-        default: pyopenms
+        description: nightly, a PyPI requirement, a direct Windows wheel URL, or none to skip
+        default: nightly
         type: string
       extra_packages:
         description: Extra pip requirements, separated by semicolons (e.g. numpy==2.2.6;pandas)
         default: ''
         type: string
       openms_package:
-        description: OpenMS installer - latest, release tag, HTTPS EXE/MSI/ZIP URL, or none to skip
-        default: latest
+        description: OpenMS installer - nightly, latest, release tag, HTTPS EXE/MSI/ZIP URL, or none to skip
+        default: nightly
         type: string
       debug:
         description: Open an SSH session after setup and tests, including on failure

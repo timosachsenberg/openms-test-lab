@@ -14,34 +14,67 @@ See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inp
 
 [Package audit: OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) records what these labs and a full static analysis of every published 3.5.0 artifact found, with the lab run IDs behind each result.
 
+## Package sources
+
+Both package inputs take the same four kinds of value in every lab, so a matrix run reads the same
+on Windows, macOS and Linux:
+
+| Value | `pyopenms_spec` resolves to | `openms_package` resolves to |
+| --- | --- | --- |
+| `nightly` | newest compatible wheel on [pypi.openms.de](https://pypi.openms.de/simple/pyopenms/) | newest dated folder under [archive.openms.de nightly](https://archive.openms.de/openms/OpenMSInstaller/nightly/) |
+| `latest` | — (use a pinned requirement instead) | newest GitHub release for this platform |
+| a pinned value | a PyPI requirement, e.g. `pyopenms==<version>` | a release tag, e.g. `release/<version>` |
+| an HTTPS URL | that exact `.whl` | that exact `.deb`, `.pkg`, `.exe`, `.msi` or `.zip` |
+| `none` | nothing installed | nothing installed |
+
+**`nightly` is the default choice for pre-release testing.** Nightly artifacts are not GitHub
+releases and the two kinds live in different places, so `scripts/resolve_nightly.py` does the lookup
+for all three labs and records what it picked:
+
+- **Wheels** come from the PEP 503 index at `https://pypi.openms.de/simple/pyopenms/`. The resolver
+  picks the newest version that has a wheel matching this runner's platform *and* interpreter,
+  honouring `abi3` — current nightlies ship one `cp311-abi3` wheel per platform, which covers
+  CPython 3.11 and newer. It installs by exact URL with the index's `sha256` fragment attached, so
+  pip verifies the hash and `reports/python-selection.json` records the version and digest actually
+  tested.
+- **Desktop installers** come from `https://archive.openms.de/openms/OpenMSInstaller/nightly/`,
+  whose folders are dated `YYYY.MM.DD`. The resolver takes the newest folder holding exactly one
+  package for this platform, looking back up to seven days if a night's build is missing, and
+  records the folder it used and whether it was the newest. The archive publishes no digest, so the
+  SHA-256 is recorded with `digest_verified: false`.
+
+There are no nightly builds for macOS Intel — neither a wheel nor a `.pkg`. Pass `none`, or an
+explicit URL, on that runner.
+
 ## Release test matrix
 
-These nine runs are the minimum set for signing off a release. Each one was executed in full against
-`release/3.5.0` on 2026-09-19; the results — six passes and three failures — are recorded in
-[PACKAGE-AUDIT-3.5.0.md](PACKAGE-AUDIT-3.5.0.md), with the run IDs.
+These nine runs are the minimum set for signing off a release or checking a nightly. Use `nightly`
+for both package inputs to test the current pre-release state; to qualify a release candidate,
+replace it with the exact version under test — a pinned requirement and a release tag — never the
+bare `pyopenms`, so the run stays reproducible after the next upload.
 
-Set **debug** to `false` for all of them so they run unattended, and pin `pyopenms_spec` to the exact
-version under test (`pyopenms==3.5.0`), never the bare `pyopenms`, so the run is reproducible after
-the next PyPI upload.
+Set **debug** to `false` for all of them so they run unattended.
 
-| # | Workflow | Runner | Python | `openms_package` | What only this run covers |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Windows package lab | `windows-2025` | 3.12 | `latest` | `win_amd64` wheel and the `Win64.exe` installer |
-| 2 | Windows package lab | `windows-2025` | 3.14 | `none` | newest CPython on Windows, wheel only |
-| 3 | macOS package lab | `macos-15` | 3.12 | `latest` | Apple Silicon wheel and the `macOS-Silicon.pkg` |
-| 4 | macOS package lab | `macos-15-intel` | 3.12 | `latest` | Intel wheel and the `macOS-Intel.pkg` |
-| 5 | macOS package lab | `macos-15` | 3.14 | `none` | newest CPython on Apple Silicon |
-| 6 | Linux package lab | `ubuntu-24.04` | 3.12 | `latest` | `manylinux` x86_64 wheel and the x86_64 DEB |
-| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `latest` | `manylinux` aarch64 wheel and the aarch64 DEB |
-| 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `latest` | oldest supported LTS — proves the `manylinux` glibc floor is reachable |
-| 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `none` | newest CPython on Linux |
+| # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | What only this run covers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel and the `Win64.exe` installer |
+| 2 | Windows package lab | `windows-2025` | 3.14 | `nightly` | `none` | newest CPython on Windows, wheel only |
+| 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and the `macOS-Silicon.pkg` |
+| 4 | macOS package lab | `macos-15-intel` | 3.12 | *(pinned or `none`)* | *(URL or `none`)* | Intel — no nightly is published, so a release build is the only option |
+| 5 | macOS package lab | `macos-15` | 3.14 | `nightly` | `none` | newest CPython on Apple Silicon |
+| 6 | Linux package lab | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | `manylinux` x86_64 wheel and the x86_64 DEB |
+| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | `manylinux` aarch64 wheel and the aarch64 DEB |
+| 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `nightly` | `nightly` | oldest supported LTS — proves the `manylinux` glibc floor is reachable |
+| 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `nightly` | `none` | newest CPython on Linux |
 
-Skipping the desktop package is the literal **`none`** in every lab. A blank value also skips, since
-clearing the field in the browser form can make GitHub re-apply the workflow default rather than
-send an empty string.
+Runs 1, 3, 6, 7 and 8 exercise both products together, which is the combination users actually
+install. Runs 2, 5 and 9 exist because the newest CPython is where wheel builds break first, and
+they matter less for an `abi3` wheel than for per-version wheels — but they still prove the one
+wheel really does load on every interpreter it claims.
 
-Runs 1, 3, 4, 6, 7 and 8 exercise both products together, which is the combination users actually
-install. Runs 2, 5 and 9 exist because the newest CPython is where wheel builds break first.
+Skipping a package is the literal **`none`** in every lab. A blank value also skips, since clearing
+the field in the browser form can make GitHub re-apply the workflow default rather than send an
+empty string.
 
 ### What every run asserts
 
@@ -147,9 +180,9 @@ The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an
 | Input | Default | Examples |
 | --- | --- | --- |
 | `python_version` | `3.12` | `3.11`, `3.12`, `3.13` (the selected wheel must support it) |
-| `pyopenms_spec` | `pyopenms` | `pyopenms==3.5.0`, direct HTTPS `.whl` URL, `none` to skip |
+| `pyopenms_spec` | `nightly` | `nightly`, `pyopenms==<version>`, direct HTTPS `.whl` URL, `none` to skip |
 | `extra_packages` | blank | `numpy==2.2.6;pandas` (semicolon separates requirements) |
-| `openms_package` | `latest` | `release/3.5.0`, public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
+| `openms_package` | `nightly` | `nightly`, `latest`, `release/<version>`, public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
 | `debug` | enabled | Disable for unattended package checks |
 | `session_minutes` | `60` | `15`, `30`, `60`, `120` |
 
