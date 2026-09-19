@@ -6,7 +6,15 @@ python -m venv .venv
 $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
 & $python -m pip install --upgrade pip
 $requirements = [System.Collections.Generic.List[string]]::new()
-if ($env:LAB_PYOPENMS_SPEC) { $requirements.Add($env:LAB_PYOPENMS_SPEC.Trim()) }
+# Accept the same 'none' skip value as the macOS and Linux labs, and normalise it for the later
+# steps so the smoke test sees a blank spec and reports 'skipped' instead of failing to import.
+$pyopenmsSpec = if ($env:LAB_PYOPENMS_SPEC) { $env:LAB_PYOPENMS_SPEC.Trim() } else { '' }
+if ($pyopenmsSpec -eq 'none') { $pyopenmsSpec = '' }
+if ($env:GITHUB_ENV) {
+    if ($pyopenmsSpec -match '[\r\n]') { throw 'Package requirement must be a single line.' }
+    "LAB_PYOPENMS_SPEC=$pyopenmsSpec" | Add-Content $env:GITHUB_ENV
+}
+if ($pyopenmsSpec) { $requirements.Add($pyopenmsSpec) }
 foreach ($spec in ($env:LAB_EXTRA_PACKAGES -split ';')) {
     if ($spec.Trim()) { $requirements.Add($spec.Trim()) }
 }

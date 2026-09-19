@@ -27,7 +27,7 @@ the next PyPI upload.
 | # | Workflow | Runner | Python | `openms_package` | What only this run covers |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Windows package lab | `windows-2025` | 3.12 | `latest` | `win_amd64` wheel and the `Win64.exe` installer |
-| 2 | Windows package lab | `windows-2025` | 3.14 | *(single space)* | newest CPython on Windows, wheel only |
+| 2 | Windows package lab | `windows-2025` | 3.14 | `none` | newest CPython on Windows, wheel only |
 | 3 | macOS package lab | `macos-15` | 3.12 | `latest` | Apple Silicon wheel and the `macOS-Silicon.pkg` |
 | 4 | macOS package lab | `macos-15-intel` | 3.12 | `latest` | Intel wheel and the `macOS-Intel.pkg` |
 | 5 | macOS package lab | `macos-15` | 3.14 | `none` | newest CPython on Apple Silicon |
@@ -36,10 +36,9 @@ the next PyPI upload.
 | 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `latest` | oldest supported LTS — proves the `manylinux` glibc floor is reachable |
 | 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `none` | newest CPython on Linux |
 
-Skipping the desktop package is spelled differently per lab, and getting it wrong wastes a run: the
-Linux and macOS labs take the literal **`none`**, while the Windows lab treats only a blank or
-whitespace value as "skip" and would try to resolve a release tag called `none`. Clearing the field
-in the browser form can make GitHub re-apply the workflow default, so pass a single space instead.
+Skipping the desktop package is the literal **`none`** in every lab. A blank value also skips, since
+clearing the field in the browser form can make GitHub re-apply the workflow default rather than
+send an empty string.
 
 Runs 1, 3, 4, 6, 7 and 8 exercise both products together, which is the combination users actually
 install. Runs 2, 5 and 9 exist because the newest CPython is where wheel builds break first.
@@ -51,9 +50,9 @@ Setup, before any test runs:
 - pip resolves and installs the requested wheel for the runner's interpreter and platform tags;
 - for `wheel_run_id` runs, the upstream artifact's SHA-256 is verified before extraction and the
   wheel's tags are checked against the interpreter's supported tags;
-- on macOS and Linux, a release asset's published digest is verified after download, and a
-  mismatch fails the run; the Windows lab records the installer's SHA-256 in
-  `reports/openms-package.json` but does not yet compare it against the published digest;
+- a release asset's published digest is verified after download on every lab, and a mismatch fails
+  the run; for a direct HTTPS URL there is no published digest, so the SHA-256 is recorded with
+  `digest_verified: false` in `reports/openms-package.json`;
 - exactly one matching release asset exists for the platform — an ambiguous release fails here.
 
 Python package checks (`scripts/smoke.py`, plus `scripts/unix-probe.py` on macOS/Linux), run **before**
@@ -148,9 +147,9 @@ The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an
 | Input | Default | Examples |
 | --- | --- | --- |
 | `python_version` | `3.12` | `3.11`, `3.12`, `3.13` (the selected wheel must support it) |
-| `pyopenms_spec` | `pyopenms` | `pyopenms==3.5.0`, direct HTTPS `.whl` URL, blank to skip |
+| `pyopenms_spec` | `pyopenms` | `pyopenms==3.5.0`, direct HTTPS `.whl` URL, `none` to skip |
 | `extra_packages` | blank | `numpy==2.2.6;pandas` (semicolon separates requirements) |
-| `openms_package` | `latest` | `release/3.5.0`, public HTTPS `.exe`/`.msi`/`.zip` URL, blank to skip |
+| `openms_package` | `latest` | `release/3.5.0`, public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
 | `debug` | enabled | Disable for unattended package checks |
 | `session_minutes` | `60` | `15`, `30`, `60`, `120` |
 

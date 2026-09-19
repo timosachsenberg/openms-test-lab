@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       pyopenms_spec:
-        description: PyPI requirement or direct Windows wheel URL (blank to skip)
+        description: PyPI requirement or direct Windows wheel URL (none to skip)
         default: pyopenms
         type: string
       extra_packages:
@@ -18,7 +18,7 @@ on:
         default: ''
         type: string
       openms_package:
-        description: OpenMS installer - latest, release tag, HTTPS EXE/MSI/ZIP URL, or blank to skip
+        description: OpenMS installer - latest, release tag, HTTPS EXE/MSI/ZIP URL, or none to skip
         default: latest
         type: string
       debug:
