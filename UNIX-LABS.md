@@ -2,10 +2,12 @@
 
 These are on-demand environments in the existing public test-lab repository:
 
-- [macOS package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/macos-lab.yml)
-- [Linux package lab](https://github.com/timosachsenberg/windows-test-lab/actions/workflows/linux-lab.yml)
+- [macOS package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/macos-lab.yml)
+- [Linux package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/linux-lab.yml)
 
-Select **Run workflow** on main. Both labs default to the current PyPI pyOpenMS wheel. macOS also installs the latest desktop OpenMS; Linux defaults to **none** for desktop installation because the 3.5.0 DEB conflicts with the runner's libsqlite3-dev package. Select **latest** or another package explicitly to test native installation. Wheel and desktop versions are recorded independently.
+Select **Run workflow** on main. Both labs default to the current **nightly** pyOpenMS wheel. macOS also installs the nightly desktop OpenMS; Linux defaults to **none** for desktop installation because the released DEB conflicts with the runner's libsqlite3-dev package, as described below. Select **nightly**, **latest** or another package explicitly to test native installation. Wheel and desktop versions are recorded independently.
+
+See [Package sources](README.md#package-sources) for how **nightly** is resolved: wheels come from the PEP 503 index at pypi.openms.de and desktop installers from the dated folders under archive.openms.de, since neither is a GitHub release. There are no macOS Intel nightlies.
 
 ## Runner choices
 
@@ -21,9 +23,9 @@ These are standard GitHub-hosted VMs. See [GitHub's runner reference](https://do
 | Input | Use |
 | --- | --- |
 | python_version | Defaults to 3.12; choose a version supported by your wheel. |
-| pyopenms_spec | A PyPI requirement such as pyopenms==3.5.0, a direct HTTPS wheel URL, or **none** to skip. |
+| pyopenms_spec | **nightly** for the current nightly wheel, a PyPI requirement such as pyopenms==<version>, a direct HTTPS wheel URL, or **none** to skip. |
 | extra_packages | Semicolon-separated requirements, for example numpy==2.2.6;pandas. Persistent extras can also go in requirements.txt. |
-| openms_package | **latest**, a release tag such as release/3.5.0, a public HTTPS PKG/DEB URL, or **none** to skip desktop installation. |
+| openms_package | **nightly** for the current nightly installer, **latest** for the newest release, a release tag such as release/<version>, a public HTTPS PKG/DEB URL, or **none** to skip desktop installation. |
 | wheel_run_id | Optional completed upstream OpenMS wheel-workflow run ID. Selects a compatible wheel and overrides pyopenms_spec. |
 | debug | Enabled by default. Opens SSH after checks, including if a check failed. Disable for unattended testing. |
 | session_minutes | 5, 15, 30, 60 or 120; defaults to 60. |
@@ -37,7 +39,7 @@ For an upstream run, expected artifact names are wheels-linux-x64, wheels-linux-
 
 ## Known native Linux package finding
 
-The [first Linux validation](https://github.com/timosachsenberg/windows-test-lab/actions/runs/35217816363) successfully tested pyOpenMS and opened SSH, but installing the official OpenMS 3.5.0 x86_64 DEB failed: it tries to overwrite /usr/include/sqlite3.h, owned by Ubuntu's libsqlite3-dev package. The failure remains visible in the run and its reports. The lab does not force overwrites or remove the conflicting development package. Use **none** for a wheel-only lab, or explicitly select a native package to reproduce or investigate installation behavior.
+The [first Linux validation](https://github.com/timosachsenberg/openms-test-lab/actions/runs/35217816363) successfully tested pyOpenMS and opened SSH, but installing the official OpenMS 3.5.0 x86_64 DEB failed: it tries to overwrite /usr/include/sqlite3.h, owned by Ubuntu's libsqlite3-dev package. The failure remains visible in the run and its reports. The lab does not force overwrites or remove the conflicting development package. Use **none** for a wheel-only lab, or explicitly select a native package to reproduce or investigate installation behavior.
 
 ## Connect with the existing key
 
@@ -95,9 +97,9 @@ Standalone ldd checks can report a dependency as unresolved even when importing 
 
 ## Verified runs (2026-09-17)
 
-- [macOS Apple Silicon, released packages](https://github.com/timosachsenberg/windows-test-lab/actions/runs/35217768126): pyOpenMS 3.5.0 and desktop OpenMS 3.5.0 tests passed; SSH, SFTP and wheel exports verified.
-- [Ubuntu 24.04 x64, released packages](https://github.com/timosachsenberg/windows-test-lab/actions/runs/35217816363): pyOpenMS 3.5.0, SSH, SFTP and exports passed; the native DEB install exposed the SQLite header conflict documented above.
-- [macOS stub-fix wheel](https://github.com/timosachsenberg/windows-test-lab/actions/runs/35218497508) and [Linux stub-fix wheel](https://github.com/timosachsenberg/windows-test-lab/actions/runs/35218518677): both passed with wheel_run_id=34995180695 and openms_package=none. All 44 packaged stubs parsed on each platform; smoke tests and artifact SHA-256 checks passed.
+- [macOS Apple Silicon, released packages](https://github.com/timosachsenberg/openms-test-lab/actions/runs/35217768126): pyOpenMS 3.5.0 and desktop OpenMS 3.5.0 tests passed; SSH, SFTP and wheel exports verified.
+- [Ubuntu 24.04 x64, released packages](https://github.com/timosachsenberg/openms-test-lab/actions/runs/35217816363): pyOpenMS 3.5.0, SSH, SFTP and exports passed; the native DEB install exposed the SQLite header conflict documented above.
+- [macOS stub-fix wheel](https://github.com/timosachsenberg/openms-test-lab/actions/runs/35218497508) and [Linux stub-fix wheel](https://github.com/timosachsenberg/openms-test-lab/actions/runs/35218518677): both passed with wheel_run_id=34995180695 and openms_package=none. All 44 packaged stubs parsed on each platform; smoke tests and artifact SHA-256 checks passed.
 
 The released macOS 3.5.0 Python probe loaded 13 libraries from the runner's Homebrew installation. The tested 3.6.0.dev20260915 macOS wheel probe loaded none from Homebrew. The released Linux wheel had 13 binaries with standalone ldd findings; the development wheel had none. These are probe-specific observations, not a claim that every package feature is self-contained.
 

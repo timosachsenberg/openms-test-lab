@@ -13,6 +13,8 @@ import urllib.request
 import venv
 import zipfile
 
+import resolve_nightly
+
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
 DOWNLOADS = ROOT / "downloads"
@@ -163,7 +165,12 @@ def setup():
         spec = upstream_wheel(os.environ["LAB_WHEEL_RUN_ID"].strip())
     if spec.lower() == "none":
         spec = ""
-    write("python-selection.json", {"pyopenms_spec": spec})
+    nightly = None
+    if spec.lower() == "nightly":
+        nightly = resolve_nightly.wheel()
+        # pip verifies the index's sha256 fragment carried on this URL.
+        spec = nightly["url"]
+    write("python-selection.json", {"pyopenms_spec": spec, "nightly": nightly})
     if os.environ.get("GITHUB_ENV"):
         with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as out:
             if "\n" in spec or "\r" in spec:
@@ -195,7 +202,11 @@ def native():
         return
     expected = None
     release_tag = None
-    if selection.startswith("https://"):
+    nightly = None
+    if selection.lower() == "nightly":
+        nightly = resolve_nightly.desktop()
+        url = nightly["url"]
+    elif selection.startswith("https://"):
         url = selection
     else:
         release = api("/releases/latest" if selection == "latest" else "/releases/tags/" + urllib.parse.quote(selection, safe=""))
@@ -211,7 +222,8 @@ def native():
     package = DOWNLOADS / filename
     digest = download(url, package, expected)
     record = {"status": "downloaded", "url": url, "release": release_tag, "sha256": digest,
-              "expected_digest": expected, "digest_verified": bool(expected), "file": filename}
+              "expected_digest": expected, "digest_verified": bool(expected), "file": filename,
+              "nightly": nightly}
     write("openms-package.json", record)
     if MAC:
         run(["sudo", "installer", "-pkg", package, "-target", "/"], "openms-install.log")
