@@ -77,7 +77,8 @@ $ curl https://pypi.openms.de/simple/pyopenms/
 ```
 
 The site root (`https://pypi.openms.de/`) answers the same way, so this is the whole service and not
-one path. Observed continuously from 06:45 to 07:16 UTC on 2026-09-22 across ten probes.
+one path. Observed continuously from 06:45 to 07:23 UTC on 2026-09-22 across fourteen probes,
+and still failing when this report was written.
 
 It is not a local network artifact. **All nine lab runs failed at the same call**, on GitHub-hosted
 Azure runners in three operating systems:
