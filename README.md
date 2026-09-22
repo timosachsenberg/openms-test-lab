@@ -12,7 +12,11 @@ This repository was previously named `windows-test-lab`. All links and runner pa
 
 See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inputs, SSH, exports and dependency reports. The sections below describe Windows.
 
-[Package audit: OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) records what these labs and a full static analysis of every published 3.5.0 artifact found, with the lab run IDs behind each result.
+Two package audits record what these labs and a full static analysis of every artifact found,
+with the lab run IDs behind each result:
+[OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) for the release, and
+[the 2026-09-22 nightly](PACKAGE-AUDIT-NIGHTLY-2026-09-22.md) for the current pre-release state.
+[AGENTS.md](AGENTS.md) defines what a full package audit covers and how to write one up.
 
 ## Package sources
 
