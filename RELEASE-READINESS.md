@@ -148,6 +148,11 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
     their directories are on `PATH`, as in CI. Whether the package finds them on its own is C4.
   - An input that the revision has but the sparse checkout lacks is fetched with
     `--fetch-missing`, or the test is skipped.
+  - Tools that open a Qt application (ExecutePipeline) run on Qt's `offscreen` platform where
+    the package's Qt has one. On Linux the distribution's Qt provides it. Otherwise they use
+    the runner's desktop session, as a user would. `qt_platform` in the report says which. A
+    package without `offscreen` cannot run pipelines headless; record that under C3 as
+    advisory.
 - **Not covered:**
   - Tests whose `if()` is false for the package are reported as not registered, with the
     condition and the values it read. On the 3.6 nightly these are: Bruker DDA data

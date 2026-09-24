@@ -745,6 +745,20 @@ def loads_zlib_ng(bin_dir):
     return bool(marked), evidence + (f"; from the dyld shared cache: {', '.join(cached)}" if cached else "")
 
 
+def qt_platform(bin_dir):
+    """The Qt platform the tests run with, and why. Tools that open a Qt application
+    (ExecutePipeline) need one. Linux runners have no display and the distributions' Qt
+    ships "offscreen". The macOS and Windows packages bring their own Qt; where that lacks
+    "offscreen", the tools use the runner's desktop session, as a user's would."""
+    if sys.platform.startswith("linux"):
+        return "offscreen", "no display on Linux runners; the distribution's Qt provides the offscreen platform"
+    plugins = sorted({p.name for p in bin_dir.parent.rglob("*") if p.parent.name == "platforms" and p.is_file()})
+    if any("offscreen" in name for name in plugins):
+        return "offscreen", f"the package ships the Qt platform plugins {plugins}"
+    return None, (f"the package ships the Qt platform plugins {plugins} and no offscreen one, so the tools "
+                  "use the desktop session; they cannot run headless")
+
+
 def package_configuration(bin_dir, share):
     """The variables the TOPP test files take from the build (TOPP_TOOLS, build options,
     platform), as this package answers them, and how each answer was found."""
@@ -766,7 +780,7 @@ def package_configuration(bin_dir, share):
         "DISABLE_OPENSWATH": (on("OpenSwathWorkflow" not in tools), registered("OpenSwathWorkflow")),
         "WITH_WNETALIGN": (on("FeatureLinkerWNet" in tools), registered("FeatureLinkerWNet")),
         "WITH_GUI": (on("ImageCreator" in tools), registered("ImageCreator") + ", a tool built only WITH_GUI"),
-        "HAS_XSERVER": ("ON", "CMake default; tests run with QT_QPA_PLATFORM=offscreen"),
+        "HAS_XSERVER": ("ON", "CMake default; see qt_platform for the display the tests use"),
         "WITH_OPENTIMS": (on(has_d), f"'d' is {'' if has_d else 'not '}among FileConverter's input formats"),
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
@@ -982,9 +996,13 @@ def main():
             engines[variable] = found
     # CI finds the engines on PATH (find_program(... PATHS ENV PATH)), and a few tools call
     # other tools by name, so the tests run with the bin directory and the engines on PATH.
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen",
-               PATH=os.pathsep.join([str(bin_dir)] + sorted({str(p.parent) for p in engines.values()})
-                                    + [os.environ.get("PATH", "")]))
+    env = dict(os.environ, PATH=os.pathsep.join([str(bin_dir)] + sorted({str(p.parent) for p in engines.values()})
+                                                + [os.environ.get("PATH", "")]))
+    qt, qt_evidence = qt_platform(bin_dir)
+    if qt:
+        env["QT_QPA_PLATFORM"] = qt
+    else:
+        env.pop("QT_QPA_PLATFORM", None)
     configuration, evidence = package_configuration(bin_dir, share)
     # Forward slashes everywhere: the OpenMS tools accept them on Windows, and a path that
     # ends up inside a `bash -c "..."` script must not carry backslash escapes.
@@ -1033,6 +1051,7 @@ def main():
         summary[result["status"]] = summary.get(result["status"], 0) + 1
     report = {"openms": str(openms), "bin_dir": str(bin_dir), "share_dir": str(share), "selection": pattern,
               "package_configuration": {k: {"value": variables[k][:200], "evidence": evidence[k]} for k in evidence},
+              "qt_platform": {"value": qt or "native", "evidence": qt_evidence},
               "suites": suites, "replay_notes": notes, "defined_tests": len(order), "not_registered": len(excluded),
               "selected": len(ordered), "summary": summary, "tests": ordered,
               "status": "passed" if not summary.get("failed") else "failed"}
@@ -1042,6 +1061,7 @@ def main():
 
     for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
+    print(f"  Qt platform: {qt or 'native'} ({qt_evidence})")
     for note in notes:
         print(f"  replay note: {note}")
     print(f"{len(chosen)} of the {len(order)} upstream TOPP tests registered for this package selected, and "
