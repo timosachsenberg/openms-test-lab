@@ -43,15 +43,18 @@ try:
 except Exception:
     pass
 for index, block in enumerate(blocks):
+    name = f"{block['page']}:{block['line']}"
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try:
             with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-                exec(compile(block["code"], f"{block['page']}:{block['line']}", "exec"), namespace)
+                exec(compile(block["code"], name, "exec"), namespace)
             result["executed"] += 1
         except BaseException as error:  # SystemExit from an example counts as a failure too
             result["failed_block"] = index
-            result["failed_line"] = block["line"]
+            # the line of the statement that raised, not just the block's first line
+            frames = [f for f in traceback.extract_tb(error.__traceback__) if f.filename == name]
+            result["failed_line"] = block["line"] + (frames[-1].lineno - 1 if frames else 0)
             result["exception"] = f"{type(error).__name__}: {error}"[:600]
             result["exception_type"] = type(error).__name__
             result["missing_module"] = getattr(error, "name", None) if isinstance(error, ModuleNotFoundError) else None
@@ -61,7 +64,8 @@ for index, block in enumerate(blocks):
                 text = f"{item.category.__name__}: {item.message}"
                 origin = str(item.filename)
                 if "pyopenms" in origin or "pyopenms" in text.lower() or block["page"] in origin:
-                    result["warnings"].append({"line": block["line"], "warning": text[:300],
+                    line = block["line"] + (item.lineno - 1 if item.filename == name else 0)
+                    result["warnings"].append({"line": line, "warning": text[:300],
                                                "origin": origin[-120:]})
     if "failed_block" in result:
         break
@@ -85,6 +89,8 @@ def extract_blocks(page):
                                   len(lines[i]) - len(lines[i].lstrip()) > len(match.group(1))):
             i += 1
         body = lines[start:i]
+        while body and not body[0].strip():  # line numbers count from the first line of code
+            body, start = body[1:], start + 1
         indent = min((len(l) - len(l.lstrip()) for l in body if l.strip()), default=0)
         code = "\n".join(l[indent:] for l in body).strip("\n")
         if code and not NOT_PYTHON.search(code):
