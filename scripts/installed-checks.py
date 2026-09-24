@@ -5,8 +5,9 @@ step then
 
   1. starts every registered tool (scripts/topp-tools-smoke.py), and
   2. fetches src/tests/topp of the exact commit the package was built from (the Revision
-     that `FileInfo --help` prints) and runs the release-gate selection of the upstream
-     TOPP tests against the installed binaries (scripts/installed-topp-tests.py).
+     that `FileInfo --help` prints) and replays the upstream TOPP tests against the
+     installed binaries (scripts/installed-topp-tests.py): all of them by default, or the
+     selection in LAB_TOPP_TEST_SELECTION (release-gate, all, or a regex on test names).
 
 Nothing is installed or changed on the system. When no desktop package was installed the
 step records that and succeeds. It exits non-zero when either check failed, after writing
@@ -83,7 +84,7 @@ def main():
             summary["commit"] = commit
             summary["upstream_exit"] = subprocess.run(
                 [python, str(ROOT / "scripts/installed-topp-tests.py"), "--openms", str(SOURCE),
-                 "--bin-dir", str(bin_dir), "--select", os.environ.get("LAB_TOPP_TEST_SELECTION", "release-gate"),
+                 "--bin-dir", str(bin_dir), "--select", os.environ.get("LAB_TOPP_TEST_SELECTION") or "all",
                  "--fetch-missing",
                  "--report", str(REPORTS / "installed-topp-tests.json")], env=child_env).returncode
         except Exception as error:  # network or git trouble is reported, not hidden

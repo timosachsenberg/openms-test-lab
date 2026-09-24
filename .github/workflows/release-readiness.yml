@@ -22,8 +22,8 @@ on:
         default: ''
         type: string
       topp_test_selection:
-        description: Upstream TOPP tests to run on the installation; release-gate, all, or a regex
-        default: release-gate
+        description: Upstream TOPP tests to run on the installation; all, release-gate, or a regex
+        default: all
         type: string
 
 permissions:
