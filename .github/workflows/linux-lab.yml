@@ -1,5 +1,5 @@
 name: Linux package lab
-run-name: Linux lab · ${{ inputs.runner }} · Python ${{ inputs.python_version }}
+run-name: Linux lab · ${{ inputs.runner }} · Python ${{ inputs.python_version }}${{ inputs.fix_script != '' && format(' · fix {0}', inputs.fix_script) || '' }}
 
 on:
   workflow_dispatch:
@@ -43,6 +43,10 @@ on:
         description: Download installed Python packages into the exports artifact
         default: false
         type: boolean
+      fix_script:
+        description: Optional candidate fix in fixes/ applied to the installed package before the checks (results then judge the fix, not the package)
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -91,6 +95,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
+          LAB_FIX_SCRIPT: ${{ inputs.fix_script }}
         run: python3 scripts/installed-checks.py
       - name: Inventory after native installation
         if: ${{ !cancelled() }}

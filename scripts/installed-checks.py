@@ -10,7 +10,9 @@ step then
      all of them by default, or the selection in LAB_TOPP_TEST_SELECTION (release-gate, all,
      or a regex on test names).
 
-Nothing is installed or changed on the system. When no desktop package was installed the
+Nothing is installed or changed on the system, unless LAB_FIX_SCRIPT names a candidate fix in
+fixes/: that script then changes the installation first, and the report says so, because the
+results then judge the fix and not the package. When no desktop package was installed the
 step records that and succeeds. It exits non-zero when either check failed, after writing
 both reports, so the lab run shows red while later steps still run.
 """
@@ -23,6 +25,7 @@ import sys
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXES = ROOT / "fixes"
 REPORTS = ROOT / "reports"
 SOURCE = ROOT / "downloads" / "openms-tests"
 EXE = ".exe" if sys.platform.startswith("win") else ""
@@ -54,6 +57,14 @@ def fetch_tests(commit, env):
     subprocess.run(git + ["checkout", "-q", "FETCH_HEAD"], check=True, env=env)
 
 
+def apply_fix(script, root, env):
+    """Run a candidate fix from fixes/ against the installation root; only files there run."""
+    path = (ROOT / script).resolve()
+    if path.parent != FIXES.resolve() or not path.is_file() or path.suffix != ".sh":
+        raise SystemExit(f"LAB_FIX_SCRIPT must name a .sh file in fixes/, not {script!r}")
+    return subprocess.run(["bash", str(path), str(root)], env=env).returncode
+
+
 def main():
     bin_file = REPORTS / "openms-bin.txt"
     if not bin_file.exists():
@@ -66,6 +77,11 @@ def main():
     # The job token is only for the commit lookup; the tools under test never see it.
     child_env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
     summary = {"bin_dir": str(bin_dir)}
+    fix = os.environ.get("LAB_FIX_SCRIPT", "").strip()
+    if fix:
+        summary.update(fix_script=fix, fix_exit=apply_fix(fix, bin_dir.parent, child_env),
+                       note="A candidate fix changed the installation; these results judge the fix, not the package.")
+        print(f"::warning::{summary['note']} ({fix})")
 
     smoke = [python, str(ROOT / "scripts/topp-tools-smoke.py"), "--bin-dir", str(bin_dir),
              "--report", str(REPORTS / "topp-tools.json")]
@@ -97,7 +113,7 @@ def main():
     libs += (["/", "--file-list", str(package_files)] if package_files.exists() else [str(bin_dir.parent)])
     summary["bundled_libs_exit"] = subprocess.run(libs, env=child_env).returncode
     failed = (summary.get("tools_exit") or summary.get("upstream_exit") or summary.get("bundled_libs_exit")
-              or summary.get("upstream_tests") == "error")
+              or summary.get("upstream_tests") == "error" or summary.get("fix_exit"))
     summary["status"] = "failed" if failed else "passed"
     (REPORTS / "installed-checks.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))

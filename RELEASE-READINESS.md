@@ -283,6 +283,14 @@ onto this procedure as follows.
 | Conda packages (Python 3.6/3.7 commands) | Changed: two recipes in `bioconda-recipes` (`openms-meta` with `libopenms`/`openms`/`openms-thirdparty`, and `pyopenms`); conda-forge before bioconda with strict priority; Python 3.11+ | G7 |
 | Report bugs labelled "OpenMS x.y.z RC1" | Changed: the bug form has a required version field; paste `OpenMSInfo` output and the installer file name | report |
 
+## Verifying a proposed fix
+
+When a check fails because of how a package is laid out, the proposed fix can often be tried on
+the installed package before OpenMS changes anything. Put a script in [fixes/](fixes/README.md)
+and dispatch a lab with `fix_script=fixes/<script>`. The lab applies the script before the
+checks, and `installed-checks.json` records it. Such a run is evidence for the fix, never for
+the candidate; link it from the issue or pull request that proposes the fix.
+
 ## Adding a check
 
 Give it the next free ID in its section, a pass criterion that a script or a person can decide

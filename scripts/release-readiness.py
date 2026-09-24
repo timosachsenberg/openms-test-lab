@@ -157,6 +157,9 @@ def summary():
         rows.append((check, {True: "PASS", False: "FAIL", None: "NOT RUN"}[ok], detail))
 
     data = state()
+    fixed = (load("installed-checks.json") or {}).get("fix_script")
+    if fixed:  # a candidate fix changed the installation: C1-C3 would judge the fix, not the candidate
+        row("C evidence is from the unmodified package", False, f"the installation was changed by {fixed}")
     tools = load("topp-tools.json")
     row("C1 every registered tool starts", None if tools is None else not tools["failed_tools"],
         "no report" if tools is None else f"{tools['registered_tools']} tools, failed {tools['failed_tools']}, "
