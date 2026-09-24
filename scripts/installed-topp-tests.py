@@ -758,14 +758,16 @@ def package_configuration(bin_dir, share):
         writes_cwl = cwl is not None and cwl.returncode == 0 and any(p.stat().st_size for p in Path(folder).iterdir())
     zlib_ng, zlib_evidence = loads_zlib_ng(bin_dir)
     on = lambda flag: "ON" if flag else "OFF"
+    registered = lambda tool: f"{tool} is {'' if tool in tools else 'not '}registered"
+    has_d = "'d'" in formats
     found = {
         "TOPP_TOOLS": (";".join(tools), f"{len(tools)} tools in {', '.join(p.as_posix() for p in registry)}"),
         "OPENMS_TOOL_REGISTRY_BUILD_FILE": (registry[0].as_posix() if registry else "", "the installed registry"),
-        "DISABLE_OPENSWATH": (on("OpenSwathWorkflow" not in tools), "OpenSwathWorkflow in the registry or not"),
-        "WITH_WNETALIGN": (on("FeatureLinkerWNet" in tools), "FeatureLinkerWNet in the registry or not"),
-        "WITH_GUI": (on("ImageCreator" in tools), "ImageCreator (built only WITH_GUI) in the registry or not"),
+        "DISABLE_OPENSWATH": (on("OpenSwathWorkflow" not in tools), registered("OpenSwathWorkflow")),
+        "WITH_WNETALIGN": (on("FeatureLinkerWNet" in tools), registered("FeatureLinkerWNet")),
+        "WITH_GUI": (on("ImageCreator" in tools), registered("ImageCreator") + ", a tool built only WITH_GUI"),
         "HAS_XSERVER": ("ON", "CMake default; tests run with QT_QPA_PLATFORM=offscreen"),
-        "WITH_OPENTIMS": (on("'d'" in formats), "'d' among FileConverter's input formats or not"),
+        "WITH_OPENTIMS": (on(has_d), f"'d' is {'' if has_d else 'not '}among FileConverter's input formats"),
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
         "HAVE_ZLIB_NG": (on(zlib_ng), zlib_evidence),

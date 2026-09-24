@@ -124,9 +124,10 @@ Desktop package checks:
 - every tool in the installed tool registry (`share/OpenMS/TOOLS/*.tsv`) exits zero on `--help`,
   writes a valid CTD with `-write_ctd`, and reports the same version, and every bundled search
   engine starts (`scripts/topp-tools-smoke.py`);
-- the upstream TOPP tests of the exact commit the package was built from (its `Revision:`) run
-  against the installed binaries: all of them, replayed from the upstream CMake files with the
-  package's own build options (`scripts/installed-topp-tests.py`);
+- the upstream TOPP and TOPPAS tests of the exact commit the package was built from (its
+  `Revision:`) run against the installed binaries: all of them, replayed from the upstream CMake
+  files with the package's own build options, including every example pipeline the package
+  ships (`scripts/installed-topp-tests.py`);
 - the versions of bundled OpenSSL, zlib, curl, SQLite and Qt are recorded, and an OpenSSL copy
   affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`).
 

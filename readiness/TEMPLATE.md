@@ -41,7 +41,7 @@ evidence.
 ### C. The installed desktop package (per platform: Linux x64 / Linux arm64 / macOS / Windows)
 - [ ] C1 Every registered tool starts —
 - [ ] C2 The bundled search engines start —
-- [ ] C3 Upstream TOPP tests pass on the installation —
+- [ ] C3 Upstream TOPP and TOPPAS tests pass on the installation (per platform: passed/failed, not-registered tests and why, replay notes) —
 - [ ] C4 Adapters find the bundled engines on their own —
 - [ ] C5 Vendor readers work in the installed package —
 - [ ] C6 The DEB installs where it claims to —

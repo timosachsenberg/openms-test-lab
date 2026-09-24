@@ -164,8 +164,11 @@ def summary():
     row("C2 bundled engines start", None if tools is None else not tools["thirdparty_not_started"],
         "no report" if tools is None else f"not started: {tools['thirdparty_not_started']}")
     upstream = load("installed-topp-tests.json")
-    row("C3 upstream TOPP tests on the installed package", None if upstream is None else upstream["status"] == "passed",
-        "no report" if upstream is None else f"{upstream['summary']} of {upstream['selected']} selected")
+    row("C3 upstream TOPP and TOPPAS tests on the installed package",
+        None if upstream is None else upstream["status"] == "passed" and not upstream.get("replay_notes"),
+        "no report" if upstream is None else
+        f"{upstream['summary']} of {upstream['selected']} selected; {upstream.get('not_registered', 0)} not "
+        f"registered for this package; replay notes: {upstream.get('replay_notes') or 'none'}")
     diff = load("pyopenms-api-diff.json")
     if diff:
         row("D1 removed Python names are in the CHANGELOG", not diff.get("removed_names_not_in_changelog"),
