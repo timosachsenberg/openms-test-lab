@@ -150,9 +150,9 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
     `--fetch-missing`, or the test is skipped.
   - Tools that open a Qt application (ExecutePipeline) run on Qt's `offscreen` platform where
     the package's Qt has one. On Linux the distribution's Qt provides it. Otherwise they use
-    the runner's desktop session, as a user would. `qt_platform` in the report says which. A
-    package without `offscreen` cannot run pipelines headless; record that under C3 as
-    advisory.
+    the native platform, as a user would. `qt_platform` in the report says which. A macOS
+    package without `offscreen` cannot run pipelines without a logged-in desktop session;
+    record that under C3 as advisory.
 - **Not covered:**
   - Tests whose `if()` is false for the package are reported as not registered, with the
     condition and the values it read. On the 3.6 nightly these are: Bruker DDA data
@@ -161,8 +161,8 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
     round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
     replayed.
-- **Cost:** about 4 minutes on the hosted runners for roughly 2,200 tests (`--jobs` defaults
-  to half the cores). The TOPPAS example pipelines take a good part of that. `--select
+- **Cost:** the whole installed-checks step, including C1, C2 and F6, takes 4 to 7 minutes on
+  the hosted runners for about 2,200 tests (`--jobs` defaults to half the cores). The TOPPAS example pipelines take a good part of that. `--select
   release-gate` is the quick subset: new tools, workflows, native formats, adapters and
   pipelines.
 

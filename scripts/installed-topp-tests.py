@@ -749,14 +749,14 @@ def qt_platform(bin_dir):
     """The Qt platform the tests run with, and why. Tools that open a Qt application
     (ExecutePipeline) need one. Linux runners have no display and the distributions' Qt
     ships "offscreen". The macOS and Windows packages bring their own Qt; where that lacks
-    "offscreen", the tools use the runner's desktop session, as a user's would."""
+    "offscreen", the tools use the native platform, as a user's would."""
     if sys.platform.startswith("linux"):
         return "offscreen", "no display on Linux runners; the distribution's Qt provides the offscreen platform"
     plugins = sorted({p.name for p in bin_dir.parent.rglob("*") if p.parent.name == "platforms" and p.is_file()})
     if any("offscreen" in name for name in plugins):
         return "offscreen", f"the package ships the Qt platform plugins {plugins}"
-    return None, (f"the package ships the Qt platform plugins {plugins} and no offscreen one, so the tools "
-                  "use the desktop session; they cannot run headless")
+    headless = " (on macOS they need a logged-in desktop session, so not headless)" if sys.platform == "darwin" else ""
+    return None, f"the package ships the Qt platform plugins {plugins} and no offscreen one, so the tools use the native platform{headless}"
 
 
 def package_configuration(bin_dir, share):
