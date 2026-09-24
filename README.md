@@ -14,6 +14,8 @@ See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inp
 
 [Package audit: OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) records what these labs and a full static analysis of every published 3.5.0 artifact found, with the lab run IDs behind each result.
 
+**Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
+
 ## Package sources
 
 Both package inputs take the same four kinds of value in every lab, so a matrix run reads the same
@@ -54,6 +56,10 @@ replace it with the exact version under test — a pinned requirement and a rele
 bare `pyopenms`, so the run stays reproducible after the next upload.
 
 Set **debug** to `false` for all of them so they run unattended.
+
+This is the matrix used for 3.5. From 3.6 on, use the one in
+[RELEASE-READINESS.md](RELEASE-READINESS.md#release-matrix-for-36): 3.6 ships no macOS Intel build,
+and its DEB needs glibc 2.38, so run 8 tests only the wheel on Ubuntu 22.04.
 
 | # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | What only this run covers |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -114,7 +120,18 @@ Desktop package checks:
   `C:\OpenMS` on Windows;
 - `FileInfo --help` starts and exits zero, traced under `LD_DEBUG=libs` or `DYLD_PRINT_LIBRARIES`;
 - `FileInfo -in reports/smoke.mzML` reads the file the Python step wrote, so the two products are
-  checked against one another rather than only against themselves.
+  checked against one another rather than only against themselves;
+- every tool in the installed tool registry (`share/OpenMS/TOOLS/*.tsv`) exits zero on `--help`,
+  writes a valid CTD with `-write_ctd`, and reports the same version, and every bundled search
+  engine starts (`scripts/topp-tools-smoke.py`);
+- the upstream TOPP tests of the exact commit the package was built from (its `Revision:`) run
+  against the installed binaries — the release-gate selection of new tools, workflows, native
+  formats and search-engine adapters (`scripts/installed-topp-tests.py`);
+- the versions of bundled OpenSSL, zlib, curl, SQLite and Qt are recorded, and an OpenSSL copy
+  affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`).
+
+These three run in one step, `scripts/installed-checks.py`, which writes `installed-checks.json`,
+`topp-tools.json`, `installed-topp-tests.json` and `bundled-libs.json`.
 
 Inventory collected for every run, to make a later diff meaningful:
 
@@ -137,8 +154,9 @@ a package is self-contained.
 ### Checks that are not automated here
 
 The 3.5.0 audit combined the runs above with static analysis of every published artifact. These are
-not yet wired into a workflow, so run them by hand against the candidate artifacts. Each one caught
-at least one finding that no lab run surfaced:
+not yet wired into a workflow, so run them by hand against the candidate artifacts (they are checks
+F1–F9 in [RELEASE-READINESS.md](RELEASE-READINESS.md); bundled OpenSSL is now automated, see above).
+Each one caught at least one finding that no lab run surfaced:
 
 | Check | Tool | Catches |
 | --- | --- | --- |
