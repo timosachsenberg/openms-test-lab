@@ -1,16 +1,19 @@
 """Run upstream TOPP tests against an installed OpenMS instead of a build tree.
 
-OpenMS CI runs its TOPP tests (src/tests/topp/CMakeLists.txt) against the binaries in the
-build directory. A package is a different thing: it has to find its shared data, bundled
+OpenMS CI runs its TOPP tests (src/tests/topp/CMakeLists.txt) and TOPPAS pipeline tests
+(src/tests/toppas/CMakeLists.txt, which also run every example pipeline in
+share/OpenMS/examples/TOPPAS) against the binaries in the build directory. A package is a different thing: it has to find its shared data, bundled
 engines, plugins and runtime libraries from wherever the installer put them. This script
 replays the same CMake files against the installed tools and runs a selection of the tests
 they define, so a release is judged by what users install rather than by what CI built.
 
 It needs a checkout of the OpenMS commit the package was built from (the Revision printed by
-`FileInfo --help`); only src/tests/topp is read, so a sparse checkout is enough:
+`FileInfo --help`); only src/tests/topp and src/tests/toppas are read, so a sparse checkout
+is enough:
 
     git clone --filter=blob:none --sparse https://github.com/OpenMS/OpenMS
-    git -C OpenMS sparse-checkout set src/tests/topp && git -C OpenMS checkout <revision>
+    git -C OpenMS sparse-checkout set --no-cone /src/tests/topp/ /src/tests/toppas/
+    git -C OpenMS checkout <revision>
     python scripts/installed-topp-tests.py --openms OpenMS --select release-gate
     python scripts/installed-topp-tests.py --openms OpenMS --select all --fetch-missing
     python scripts/installed-topp-tests.py --openms OpenMS --select 'TOPP_(ProSE|UniPEFF)_'
@@ -27,11 +30,14 @@ skipped is counted as passed.
 A test's diff companions (TOPP_X_1_out, which DEPEND on TOPP_X_1) are selected with it, and
 the tests it depends on run first. As in upstream CI, the bundled engines are on PATH while
 the tests run; whether the package finds them without help is a separate check (C4 in
-RELEASE-READINESS.md). DATA_DIR_SHARE points at the installed share/OpenMS, because that is
-what users get; every other variable keeps the meaning the test files give it.
+RELEASE-READINESS.md). DATA_DIR_SHARE and CF_OPENMS_DATA_PATH point at the installed
+share/OpenMS, because that is what users get; every other variable keeps the meaning the test
+files give it. Each directory's tests run in its own scratch binary directory, as ctest runs
+them in the build directory of the folder that defined them.
 """
 import argparse
 import concurrent.futures
+import glob
 import json
 import os
 from pathlib import Path
@@ -54,7 +60,7 @@ RELEASE_GATE = (r"TOPP_(MS1LabeledWorkflow|FeatureLinkerWNet|UniPEFF|OpenSwathIn
                 r"IDMerger_idparquet|FileFilter_2[5-9]|FileFilter_30|PercolatorAdapter|CometAdapter|"
                 r"SageAdapter|SimpleSearchEngine|FileConverter|IDFileConverter|PeakPickerHiRes|"
                 r"FeatureFinderCentroided|FeatureFinderMetabo|MapAlignerPoseClustering|FeatureLinkerUnlabeledQT|"
-                r"ProteinQuantifier|TextExporter|MzTabExporter)_")
+                r"ProteinQuantifier|TextExporter|MzTabExporter|ExecutePipeline)_")
 ENGINES = {  # CMake variable -> (THIRDPARTY folder, candidate file names)
     "COMET_BINARY": ("Comet", ["comet.exe", "comet"]), "SAGE_BINARY": ("Sage", ["sage.exe", "sage"]),
     "PERCOLATOR_BINARY": ("Percolator", ["percolator.exe", "percolator"]),
@@ -603,6 +609,15 @@ class Replay:
         if words[0] == "MAKE_DIRECTORY":
             for folder in words[1:]:
                 Path(self.vars["CMAKE_CURRENT_BINARY_DIR"], folder).mkdir(parents=True, exist_ok=True)
+        elif words[0] in ("GLOB", "GLOB_RECURSE"):
+            patterns = [w for w in words[2:] if w not in ("CONFIGURE_DEPENDS", "FOLLOW_SYMLINKS")]
+            found = []
+            for pattern in patterns:
+                path = Path(self.vars["CMAKE_CURRENT_SOURCE_DIR"], pattern)
+                if words[0] == "GLOB_RECURSE":  # CMake's recursive glob searches every subdirectory
+                    path = path.parent / "**" / path.name
+                found += [p for p in glob.glob(str(path), recursive=True) if Path(p).is_file()]
+            self.assign(words[1], ";".join(sorted(Path(p).as_posix() for p in found)))
         elif words[0] == "CREATE_LINK":
             target, link = Path(words[1]), Path(words[2])
             try:
@@ -642,7 +657,8 @@ class Replay:
         self.missing = set()
         words = self.arguments(args)
         test = {"depends": [], "will_fail": False, "pass_regex": None, "fail_regex": None, "skip_regex": None,
-                "skip_code": None, "timeout": None, "environment": [], "working_directory": None, "source": where}
+                "skip_code": None, "timeout": None, "environment": [], "source": where,
+                "working_directory": self.vars["CMAKE_CURRENT_BINARY_DIR"]}
         if words[:1] == ["NAME"]:
             name, command, key = words[1], [], None
             for word in words[2:]:
@@ -712,10 +728,21 @@ def loads_zlib_ng(bin_dir):
         libraries = re.findall(r"=>\s*(/\S+)", listing.stdout) if listing else []
     candidates = sorted({p for p in libraries
                          if re.match(r"(lib)?(z|zlib1?|z-ng|zlib-ng2?|OpenMS)[.-]", Path(p).name, re.I)})
-    if not candidates:
-        return False, "no zlib or OpenMS library found among the loaded libraries; assumed classic zlib"
-    marked = [p for p in candidates if b"zlib-ng" in Path(p).read_bytes()]
-    return bool(marked), ("zlib-ng in " + ", ".join(marked)) if marked else "no zlib-ng in " + ", ".join(candidates)
+    # macOS keeps its own libraries, Apple's classic zlib among them, in the dyld shared cache
+    # rather than on disk, so a loaded /usr/lib/libz.1.dylib cannot be read and is not zlib-ng.
+    on_disk = [p for p in candidates if Path(p).is_file()]
+    if not on_disk:
+        return False, f"no zlib or OpenMS library on disk among the loaded libraries {candidates}; assumed classic zlib"
+    marked = []
+    for path in on_disk:
+        try:
+            if b"zlib-ng" in Path(path).read_bytes():
+                marked.append(path)
+        except OSError:
+            pass
+    cached = [p for p in candidates if p not in on_disk]
+    evidence = ("zlib-ng in " + ", ".join(marked)) if marked else "no zlib-ng in " + ", ".join(on_disk)
+    return bool(marked), evidence + (f"; from the dyld shared cache: {', '.join(cached)}" if cached else "")
 
 
 def package_configuration(bin_dir, share):
@@ -815,7 +842,7 @@ def absent_inputs(command, tracked):
     return absent
 
 
-def run_group(names, tests, work, timeout, results, env, tracked):
+def run_group(names, tests, timeout, results, env, tracked):
     for name in names:
         test = tests[name]
         failed_deps = [d for d in test["depends"] if d in tests and results.get(d, {}).get("status") not in (None, "passed")]
@@ -840,9 +867,10 @@ def run_group(names, tests, work, timeout, results, env, tracked):
         else:
             test_env = dict(env, **dict(e.split("=", 1) for e in test["environment"] if "=" in e))
             limit = test["timeout"] or timeout
+            Path(test["working_directory"]).mkdir(parents=True, exist_ok=True)
             started = time.monotonic()
             try:
-                completed = subprocess.run(command, cwd=test["working_directory"] or work, capture_output=True,
+                completed = subprocess.run(command, cwd=test["working_directory"], capture_output=True,
                                            text=True, errors="replace", timeout=limit, stdin=subprocess.DEVNULL,
                                            env=test_env)
                 output, code = completed.stdout + completed.stderr, completed.returncode
@@ -937,11 +965,11 @@ def main():
                                      bin_dir.parent / "Resources/share/OpenMS"] if p and (Path(p) / "CHEMISTRY").is_dir()), None)
     if share is None:
         raise SystemExit("installed share/OpenMS not found; pass --share-dir")
-    topp = openms / "src/tests/topp"
-    if not (topp / "CMakeLists.txt").is_file():
-        raise SystemExit(f"{topp / 'CMakeLists.txt'} not found; check out src/tests/topp")
+    suites = [s for s in ("topp", "toppas") if (openms / "src/tests" / s / "CMakeLists.txt").is_file()]
+    if "topp" not in suites:
+        raise SystemExit(f"{openms / 'src/tests/topp/CMakeLists.txt'} not found; check out src/tests/topp")
 
-    # Tests run in a scratch copy of the test binary directory, as in the build tree, where
+    # Tests run in scratch copies of the test binary directories, as in the build tree, where
     # several write to a relative "tmp_path/..." as well as to ${TESTS_TEMP_DIR}.
     work = Path(tempfile.mkdtemp(prefix="installed-topp-"))
     engines = {}
@@ -963,9 +991,7 @@ def main():
         **configuration,
         **{name: posix(path) for name, path in engines.items()},
         "CMAKE_RUNTIME_OUTPUT_DIRECTORY": posix(bin_dir), "OPENMS_HOST_DIRECTORY": posix(openms),
-        "CMAKE_SOURCE_DIR": posix(openms), "PROJECT_SOURCE_DIR": posix(topp), "CMAKE_CURRENT_SOURCE_DIR": posix(topp),
-        "CMAKE_CURRENT_LIST_DIR": posix(topp), "PROJECT_BINARY_DIR": posix(work),
-        "CMAKE_CURRENT_BINARY_DIR": posix(work), "CMAKE_BINARY_DIR": posix(work),
+        "CMAKE_SOURCE_DIR": posix(openms), "CMAKE_BINARY_DIR": posix(work), "CF_OPENMS_DATA_PATH": posix(share),
     }
     if shutil.which("cmake"):
         variables["CMAKE_COMMAND"] = posix(shutil.which("cmake"))
@@ -973,20 +999,30 @@ def main():
         name, _, value = definition.partition("=")
         variables[name] = value
         evidence[name] = "set with -D"
-    replay = Replay(variables, {"DATA_DIR_SHARE": posix(share)}, env)
-    replay.run_file(topp / "CMakeLists.txt")
-    tests, order = replay.tests, replay.order
+    # Sibling directories: neither sees the other's variables, as with add_subdirectory().
+    tests, order, excluded, notes = {}, [], {}, []
+    for suite in suites:
+        source, binary = openms / "src/tests" / suite, work / suite
+        binary.mkdir()
+        replay = Replay({**variables, "PROJECT_SOURCE_DIR": posix(source), "CMAKE_CURRENT_SOURCE_DIR": posix(source),
+                         "CMAKE_CURRENT_LIST_DIR": posix(source), "PROJECT_BINARY_DIR": posix(binary),
+                         "CMAKE_CURRENT_BINARY_DIR": posix(binary)}, {"DATA_DIR_SHARE": posix(share)}, env)
+        replay.run_file(source / "CMakeLists.txt")
+        order += [n for n in replay.order if n not in tests]
+        tests.update(replay.tests)
+        excluded.update(replay.excluded)
+        notes += replay.notes
 
     pattern = {"release-gate": RELEASE_GATE, "all": "."}.get(args.select, args.select)
     chosen = select(tests, order, pattern)
-    not_registered = [n for n in replay.excluded if n not in tests and re.search(pattern, n)]
+    not_registered = [n for n in excluded if n not in tests and re.search(pattern, n)]
     tracked = tracked_files(openms)
     if args.fetch_missing:
         fetch_missing_inputs(openms, [tests[n] for n in chosen], tracked)
-    results = {n: {"test": n, "source": replay.excluded[n]["source"], "status": "skipped",
-                   "reason": "not registered: " + replay.excluded[n]["reason"]} for n in not_registered}
+    results = {n: {"test": n, "source": excluded[n]["source"], "status": "skipped",
+                   "reason": "not registered: " + excluded[n]["reason"]} for n in not_registered}
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        list(pool.map(lambda group: run_group(group, tests, work, args.timeout, results, env, tracked),
+        list(pool.map(lambda group: run_group(group, tests, args.timeout, results, env, tracked),
                       components(chosen, tests)))
 
     ordered = [results[n] for n in chosen + not_registered]
@@ -995,7 +1031,7 @@ def main():
         summary[result["status"]] = summary.get(result["status"], 0) + 1
     report = {"openms": str(openms), "bin_dir": str(bin_dir), "share_dir": str(share), "selection": pattern,
               "package_configuration": {k: {"value": variables[k][:200], "evidence": evidence[k]} for k in evidence},
-              "replay_notes": replay.notes, "defined_tests": len(order), "not_registered": len(replay.excluded),
+              "suites": suites, "replay_notes": notes, "defined_tests": len(order), "not_registered": len(excluded),
               "selected": len(ordered), "summary": summary, "tests": ordered,
               "status": "passed" if not summary.get("failed") else "failed"}
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
@@ -1004,10 +1040,10 @@ def main():
 
     for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
-    for note in replay.notes:
+    for note in notes:
         print(f"  replay note: {note}")
     print(f"{len(chosen)} of the {len(order)} upstream TOPP tests registered for this package selected, and "
-          f"{len(not_registered)} of the {len(replay.excluded)} it does not register: {summary}")
+          f"{len(not_registered)} of the {len(excluded)} it does not register: {summary}")
     for result in ordered:
         if result["status"] == "failed":
             last = (result.get("output_tail") or result.get("reason") or "").splitlines()[-1:] or [""]

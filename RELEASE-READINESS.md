@@ -44,7 +44,8 @@ Rules that keep the verdict honest:
    every automated result of A2, A3, C, D, E and F6 by check ID. (GitHub offers a new
    workflow for dispatch only once it is on the default branch; before that, run the script.)
 3. **Platform labs** (B): dispatch the release matrix below with `debug=false`. Every lab
-   that installs a desktop package also runs C1–C3 and F6 on that platform.
+   that installs a desktop package also runs C1–C3 (the full upstream TOPP suite) and F6 on
+   that platform.
 4. **Static artifact checks** (F) and **judgement checks** (D5, E4): commands below.
 5. **Write the report**: copy `readiness/TEMPLATE.md` to
    `readiness/<date>-<version>-<candidate>.md`, tick every box, state the verdict and list
@@ -112,11 +113,53 @@ desktop package (`scripts/installed-checks.py`), so each platform has its own re
 | --- | --- | --- | --- | --- |
 | C1 | Every registered tool starts | `scripts/topp-tools-smoke.py` → `reports/topp-tools.json` | Each tool in `share/OpenMS/TOOLS/*.tsv` exits 0 on `--help` and prints a `Version:` line, `-write_ctd` writes a CTD that parses and has a category, and all tools report the same version | Blocking |
 | C2 | The bundled search engines start | same report, `thirdparty` | Every engine under `share/OpenMS/THIRDPARTY` that has a payload starts without a loader error | Blocking |
-| C3 | Upstream TOPP tests pass on the installation | `scripts/installed-topp-tests.py --select release-gate` → `reports/installed-topp-tests.json` | No test fails. Skips are listed; a skipped test of a tool that is new in this release needs a reason in the report | Blocking |
+| C3 | Upstream TOPP and TOPPAS tests pass on the installation | `scripts/installed-topp-tests.py --select all --fetch-missing` (the labs' default; see [below](#how-c3-replays-the-upstream-tests)) → `reports/installed-topp-tests.json` | No test fails. Every skipped or not-registered test is listed with its reason; one of a tool that is new in this release needs that reason in the report. `package_configuration` matches the package (a wrongly detected build option hides tests) and `replay_notes` is empty | Blocking |
 | C4 | Adapters find the bundled engines on their own | Run `CometAdapter` and `SageAdapter` without `-comet_executable` / `-sage_executable` on each platform | Exit 0 | Advisory |
 | C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader; `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files | mzML written, spectra > 0, same spectrum count from both readers | Blocking for every reader the CHANGELOG announces |
 | C6 | The DEB installs where it claims to | Linux labs (runs 6 and 7) install it next to `libsqlite3-dev`; compare the `Depends:` line (`dpkg-deb -f <deb> Depends`) with the documented supported distributions | Installs without conflicts; the glibc floor matches the docs | Blocking |
 | C7 | Upgrades order correctly | `dpkg --compare-versions <nightly-version> lt <release-version>`; install the previous release, then the candidate | A nightly sorts below its release; the upgrade leaves no files from the old version | Advisory |
+
+#### How C3 replays the upstream tests
+
+OpenMS CI runs `src/tests/topp/CMakeLists.txt` (with `THIRDPARTY/third_party_tests.cmake`) and
+`src/tests/toppas/CMakeLists.txt` against its build tree. The TOPPAS file also runs every
+example pipeline under `share/OpenMS/examples/TOPPAS`. `installed-topp-tests.py` runs the same
+files against an installation, so the example pipelines are the installed ones.
+It interprets them in order, as a configure step would: `set`, `list`, `if`, `foreach`,
+`macro`, `include`, `option`, `find_program`, `configure_file`, `add_test`,
+`set_tests_properties` and the rest of the small set of commands they use. The tests then run
+with ctest's rules: a `DEPENDS` companion runs after the test it depends on,
+`PASS_REGULAR_EXPRESSION` decides instead of the exit code, `WILL_FAIL` inverts the result,
+and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
+
+- **What the build knew is read from the package** and written to `package_configuration`
+  with its evidence:
+  - `TOPP_TOOLS`: the installed registry.
+  - `DISABLE_OPENSWATH`, `WITH_WNETALIGN` and `WITH_GUI`: whether OpenSwathWorkflow,
+    FeatureLinkerWNet and ImageCreator are registered.
+  - `WITH_OPENTIMS`: whether `d` is among FileConverter's input formats.
+  - `ENABLE_TDL`: whether `FileInfo -write_cwl` works.
+  - `HAVE_ZLIB_NG`: whether the zlib the tools load is zlib-ng.
+  - The platform variables come from the runner. `-D NAME=VALUE` overrides any of these.
+- **Deviations from CI, on purpose:**
+  - `DATA_DIR_SHARE` and `CF_OPENMS_DATA_PATH` are the installed `share/OpenMS`, because that
+    is what users get.
+  - The bundled engines in `share/OpenMS/THIRDPARTY` stand in for CI's downloaded ones, and
+    their directories are on `PATH`, as in CI. Whether the package finds them on its own is C4.
+  - An input that the revision has but the sparse checkout lacks is fetched with
+    `--fetch-missing`, or the test is skipped.
+- **Not covered:**
+  - Tests whose `if()` is false for the package are reported as not registered, with the
+    condition and the values it read. On the 3.6 nightly these are: Bruker DDA data
+    (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), a Mascot server, a licensed
+    MSFragger, Novor, the SpectraST tests that upstream disables (`AND FALSE`), and the CWL
+    round trip without TDL.
+  - Class tests are compiled test programs that exist only in a build tree, so they are not
+    replayed.
+- **Cost:** about 4 minutes on the hosted runners for roughly 2,200 tests (`--jobs` defaults
+  to half the cores). The TOPPAS example pipelines take a good part of that. `--select
+  release-gate` is the quick subset: new tools, workflows, native formats, adapters and
+  pipelines.
 
 ### D. pyOpenMS: API and user guide
 

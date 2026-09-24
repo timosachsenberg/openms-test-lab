@@ -4,10 +4,11 @@ The labs install the package and leave its bin directory in reports/openms-bin.t
 step then
 
   1. starts every registered tool (scripts/topp-tools-smoke.py), and
-  2. fetches src/tests/topp of the exact commit the package was built from (the Revision
-     that `FileInfo --help` prints) and replays the upstream TOPP tests against the
-     installed binaries (scripts/installed-topp-tests.py): all of them by default, or the
-     selection in LAB_TOPP_TEST_SELECTION (release-gate, all, or a regex on test names).
+  2. fetches src/tests/topp and src/tests/toppas of the exact commit the package was built
+     from (the Revision that `FileInfo --help` prints) and replays the upstream TOPP and
+     TOPPAS pipeline tests against the installed binaries (scripts/installed-topp-tests.py):
+     all of them by default, or the selection in LAB_TOPP_TEST_SELECTION (release-gate, all,
+     or a regex on test names).
 
 Nothing is installed or changed on the system. When no desktop package was installed the
 step records that and succeeds. It exits non-zero when either check failed, after writing
@@ -40,14 +41,15 @@ def resolve_commit(short):
 
 
 def fetch_tests(commit, env):
-    """Only the commit's src/tests/topp, without history or other blobs."""
+    """Only the commit's src/tests/topp and src/tests/toppas, without history or other blobs."""
     SOURCE.mkdir(parents=True, exist_ok=True)
     git = ["git", "-C", str(SOURCE)]
     if not (SOURCE / ".git").exists():
         subprocess.run(git + ["init", "-q"], check=True, env=env)
         subprocess.run(git + ["remote", "add", "origin", "https://github.com/OpenMS/OpenMS"], check=True, env=env)
     # Non-cone mode, so that single class-test data files can be added later (--fetch-missing).
-    subprocess.run(git + ["sparse-checkout", "set", "--no-cone", "/src/tests/topp/"], check=True, env=env)
+    subprocess.run(git + ["sparse-checkout", "set", "--no-cone", "/src/tests/topp/", "/src/tests/toppas/"],
+                   check=True, env=env)
     subprocess.run(git + ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit], check=True, env=env)
     subprocess.run(git + ["checkout", "-q", "FETCH_HEAD"], check=True, env=env)
 

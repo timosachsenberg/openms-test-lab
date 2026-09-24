@@ -39,7 +39,7 @@ commands that produce the evidence. In short:
 python3 scripts/resolve_nightly.py wheel        # newest compatible nightly wheel + sha256
 python3 scripts/resolve_nightly.py desktop      # newest nightly installer for this platform
 python3 scripts/topp-tools-smoke.py             # C1/C2 against the OpenMS on PATH
-python3 scripts/installed-topp-tests.py --openms <OpenMS checkout> --select release-gate   # C3
+python3 scripts/installed-topp-tests.py --openms <OpenMS checkout> --select all --fetch-missing  # C3
 python3 scripts/pyopenms-api.py snapshot --out <file>                                       # in each venv
 python3 scripts/pyopenms-api.py diff <old> <new> --docs <user_guide> --changelog <CHANGELOG> # D1, D4
 python3 scripts/doc-examples.py --python <venv python> --docs <user_guide> [--baseline <report>]  # D2, D3
