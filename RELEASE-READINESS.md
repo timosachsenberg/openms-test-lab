@@ -41,9 +41,10 @@ Rules that keep the verdict honest:
    [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml)
    workflow with its defaults, or on a Linux machine with sudo:
    `python3 scripts/release-readiness.py all`. Read `reports/readiness-summary.md`; it lists
-   every automated result of C, D and E by check ID.
+   every automated result of A2, A3, C, D, E and F6 by check ID. (GitHub offers a new
+   workflow for dispatch only once it is on the default branch; before that, run the script.)
 3. **Platform labs** (B): dispatch the release matrix below with `debug=false`. Every lab
-   that installs a desktop package also runs C1–C3 on that platform.
+   that installs a desktop package also runs C1–C3 and F6 on that platform.
 4. **Static artifact checks** (F) and **judgement checks** (D5, E4): commands below.
 5. **Write the report**: copy `readiness/TEMPLATE.md` to
    `readiness/<date>-<version>-<candidate>.md`, tick every box, state the verdict and list
@@ -67,13 +68,13 @@ session that keeps the runner busy for an hour.
 
 | # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | Covers |
 | --- | --- | --- | --- | --- | --- | --- |
-| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | C1–C3 on Linux x64, D, E |
-| 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3 on Windows |
+| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3 and F6 on Linux x64, D, E |
+| 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3 and F6 on Windows |
 | 2 | Windows package lab | `windows-2025` | 3.14 | `nightly` | `none` | newest CPython, wheel only |
-| 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3 on macOS |
+| 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3 and F6 on macOS |
 | 5 | macOS package lab | `macos-15` | 3.14 | `nightly` | `none` | newest CPython on Apple Silicon |
 | 6 | Linux package lab | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | x86_64 wheel and DEB |
-| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | aarch64 wheel and DEB, C1–C3 on ARM |
+| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | aarch64 wheel and DEB, C1–C3 and F6 on ARM |
 | 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `nightly` | `none` | the wheel's `manylinux_2_34` floor on the oldest LTS |
 | 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `nightly` | `none` | newest CPython on Linux |
 
@@ -158,8 +159,9 @@ desktop package (`scripts/installed-checks.py`), so each platform has its own re
 
 ### F. Static checks of the artifacts
 
-The runtime labs cannot see these; each one caught a finding in the
-[3.5.0 audit](PACKAGE-AUDIT-3.5.0.md) that no lab run surfaced.
+Each of these caught a finding in the [3.5.0 audit](PACKAGE-AUDIT-3.5.0.md) that no lab run
+surfaced. F6 is automated since (labs and Release readiness); the others are run by hand against
+the candidate files.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
@@ -168,7 +170,7 @@ The runtime labs cannot see these; each one caught a finding in the
 | F3 | Wheel metadata is usable | `twine check`; `Requires-Python`, `License-File` in `METADATA` | Present and correct | Advisory |
 | F4 | Stubs are valid Python | `compile()` every `.pyi` under `-W error`; runtime namespace vs stubs | No errors; no undeclared public names | Advisory |
 | F5 | `manylinux` compliance | `auditwheel show` | Consistent with the tag | Blocking |
-| F6 | No known-vulnerable bundled library | Version strings of bundled OpenSSL, zlib, Qt, curl, SQLite in every wheel and installer (`strings -a <lib> \| grep -m1 '^OpenSSL '` and similar) against current advisories | No bundled library with an unfixed High or Critical CVE | Blocking |
+| F6 | No known-vulnerable bundled library | `scripts/bundled-libs.py <installation or unpacked wheel>` → `reports/bundled-libs.json`: versions of bundled OpenSSL, zlib, curl, SQLite and Qt; OpenSSL is judged against the advisories on openssl-library.org, the others are checked by hand against their projects' advisories | No bundled library with an unfixed High or Critical CVE | Blocking |
 | F7 | Installers are signed | `signtool verify /pa` on the `.exe`; `pkgutil --check-signature` and `spctl -a -vv -t install` on the `.pkg` | Valid signature, notarized `.pkg` | Blocking |
 | F8 | Third-party licenses ship with what they cover | List bundled third-party components (installer `THIRDPARTY/`, managed Thermo assemblies, vendored libraries) against `share/OpenMS/LICENSES/` | Each component that requires its license to accompany it has its license file | Blocking |
 | F9 | The DEB does not collide with the distribution | `dpkg-deb -c` against `dpkg -S` ownership on the target distribution; vendored libraries in a private directory | No path owned by a distribution package; no system library copied into `/usr/lib` | Advisory |
