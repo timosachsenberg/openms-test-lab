@@ -119,9 +119,11 @@ def source():
     if not (SRC / ".git").exists():
         run(git + ["init", "-q"])
         run(git + ["remote", "add", "origin", "https://github.com/OpenMS/OpenMS"])
-    # Everything the documentation audit reads; src/tests is left out (installed-checks
-    # fetches the test data it needs on its own).
-    run(git + ["sparse-checkout", "set", "--no-cone", "/*", "!/src/tests/", "!/contrib/"])
+    # Everything the documentation audit reads. The test data is left out (installed-checks
+    # fetches what it needs on its own), but not src/tests/CMakeLists.txt and friends, which
+    # declare options such as ENABLE_TOPP_TESTING that the audit compares.
+    run(git + ["sparse-checkout", "set", "--no-cone", "/*", "!/contrib/", "!/src/tests/topp/",
+               "!/src/tests/class_tests/"])
     run(git + ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit])
     run(git + ["checkout", "-q", "FETCH_HEAD"])
     run(git + ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", "tag", data["baseline_tag"]])

@@ -26,8 +26,10 @@ LIBRARIES = {  # name -> (file name pattern, version pattern inside the binary)
     "zlib": (r"^(lib)?z(lib)?[-.0-9]*\.(so[.0-9]*|dylib|dll)$|^zlib1?\.dll$", rb"(?:deflate|inflate) (\d+\.\d+(?:\.\d+)*) Copyright"),
     "curl": (r"^(lib)?curl[-.0-9a-z]*\.(so[.0-9]*|dylib|dll)$", rb"libcurl/(\d+\.\d+\.\d+)"),
     "SQLite": (r"^(lib)?sqlite3[-.0-9]*\.(so[.0-9]*|dylib|dll)$", rb"(3\.\d{2}\.\d+)\x00"),
-    "Qt": (r"^(lib)?Qt6?Core[-.0-9a-z]*(\.(so[.0-9]*|dylib|dll))?$|^QtCore$", rb"Qt (\d+\.\d+\.\d+) \("),
+    "Qt": (r"^(lib)?Qt6Core(\.so[.0-9]*|\.dylib|\.dll)$|^QtCore$", rb"Qt (\d+\.\d+\.\d+) \("),
 }
+# Headers, build metadata and static archives are never loaded at run time.
+NOT_BINARIES = {".h", ".hpp", ".prl", ".pri", ".cmake", ".pc", ".txt", ".json", ".la", ".a", ".lib"}
 OPENSSL_ADVISORIES = "https://openssl-library.org/news/vulnerabilities-{series}/"
 
 
@@ -42,7 +44,7 @@ def scan(root, allowed):
     candidates = sorted(p for p in allowed if str(p).startswith(str(root))) if allowed is not None \
         else Path(root).rglob("*")
     for path in candidates:
-        if not path.is_file() or path.is_symlink():
+        if not path.is_file() or path.is_symlink() or path.suffix.lower() in NOT_BINARIES:
             continue
         for name, (file_pattern, version_pattern) in LIBRARIES.items():
             if re.search(file_pattern, path.name, re.I):

@@ -218,17 +218,35 @@ def select(tests, order, pattern):
     return [n for n in order if n in chosen]
 
 
+def posix_shell(name):
+    """A usable bash/sh. On Windows, System32's bash.exe is the WSL launcher, which fails on
+    runners without a Linux distribution; Git for Windows ships a real one."""
+    found = shutil.which(name)
+    if not WINDOWS:
+        return found
+    if found and "system32" not in found.lower():
+        return found
+    for root in (os.environ.get("ProgramFiles", r"C:\Program Files"), r"C:\Program Files\Git"):
+        for candidate in (Path(root) / "Git" / "bin" / f"{name}.exe", Path(root) / "bin" / f"{name}.exe"):
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def run_group(names, tests, variables, work, timeout, bin_dir, results):
     for name in names:
         test = tests[name]
         failed_deps = [d for d in test["depends"] if results.get(d, {}).get("status") not in (None, "passed")]
         command, missing = resolve(test, variables)
+        if command and command[0] in ("bash", "sh"):
+            shell = posix_shell(command[0])
+            command = [shell] + command[1:] if shell else command
         result = {"test": name, "conditions": test["conditions"], "source": test["source"]}
         executable = Path(command[0]) if command else None
         # Inputs are read from the source checkout; outputs go to the scratch directory. An
         # input the checkout lacks (e.g. class-test data outside src/tests/topp) is a limit
         # of this harness, not a failure of the package.
-        absent = [t for t in command[1:] if t.startswith(str(variables["OPENMS_HOST_DIRECTORY"]))
+        absent = [t for t in command[1:] if t.startswith(variables["OPENMS_HOST_DIRECTORY"])
                   and not Path(t).exists()]
         if missing:
             result.update(status="skipped", reason=f"unknown CMake variables {missing}")
@@ -274,7 +292,7 @@ def fetch_missing_inputs(openms, selected, variables):
         command, _ = resolve(test, variables)
         for token in command[1:]:
             path = Path(token)
-            if token.startswith(str(openms)) and not path.exists() and "tmp" not in path.name:
+            if token.startswith(openms.as_posix()) and not path.exists() and "tmp" not in path.name:
                 wanted.add("/" + path.relative_to(openms).as_posix())
     if not wanted or not (openms / ".git").exists():
         return
@@ -342,17 +360,20 @@ def main():
     topp = openms / "src/tests/topp"
     tests, order, defined, copies = load_tests(openms)
     variables = {name: value for name, value in defined.items()}
+    # Forward slashes everywhere: the OpenMS tools accept them on Windows, and a path that
+    # ends up inside a `bash -c "..."` script must not carry backslash escapes.
+    posix = lambda path: Path(path).as_posix()
     variables.update({
-        "TOPP_BIN_PATH": str(bin_dir), "DATA_DIR_TOPP": str(topp), "DATA_DIR_SHARE": str(share),
-        "DATA_DIR_TOPP_BIN": str(work), "TESTS_TEMP_DIR": str(work / "tmp_path"),
-        "DIFF": [str(bin_dir / f"FuzzyDiff{EXE}"), "-test", "-ini", str(topp / "FuzzyDiff.ini")],
+        "TOPP_BIN_PATH": posix(bin_dir), "DATA_DIR_TOPP": posix(topp), "DATA_DIR_SHARE": posix(share),
+        "DATA_DIR_TOPP_BIN": posix(work), "TESTS_TEMP_DIR": posix(work / "tmp_path"),
+        "DIFF": [posix(bin_dir / f"FuzzyDiff{EXE}"), "-test", "-ini", posix(topp / "FuzzyDiff.ini")],
         # build-tree locations some tests name directly
-        "CMAKE_CURRENT_SOURCE_DIR": str(topp), "PROJECT_SOURCE_DIR": str(topp),
-        "CMAKE_BINARY_DIR": str(work), "CMAKE_CURRENT_BINARY_DIR": str(work), "PROJECT_BINARY_DIR": str(work),
-        "OPENMS_HOST_DIRECTORY": str(openms),
+        "CMAKE_CURRENT_SOURCE_DIR": posix(topp), "PROJECT_SOURCE_DIR": posix(topp),
+        "CMAKE_BINARY_DIR": posix(work), "CMAKE_CURRENT_BINARY_DIR": posix(work), "PROJECT_BINARY_DIR": posix(work),
+        "OPENMS_HOST_DIRECTORY": posix(openms),
     })
     if shutil.which("cmake"):
-        variables["CMAKE_COMMAND"] = shutil.which("cmake")
+        variables["CMAKE_COMMAND"] = Path(shutil.which("cmake")).as_posix()
     for source, target in copies:  # inputs the build stages with configure_file(... COPYONLY)
         (src,), (dst,) = expand([source], variables, set()), expand([target], variables, set())
         if Path(src).is_file() and "${" not in dst:
@@ -362,7 +383,7 @@ def main():
         found = next((share / "THIRDPARTY" / folder / c for c in candidates
                       if (share / "THIRDPARTY" / folder / c).is_file()), None)
         if found:
-            variables[variable] = str(found)
+            variables[variable] = found.as_posix()
 
     pattern = {"release-gate": RELEASE_GATE, "all": "."}.get(args.select, args.select)
     chosen = select(tests, order, pattern)

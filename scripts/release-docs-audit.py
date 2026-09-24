@@ -205,10 +205,15 @@ def cmake_files(repo, ref):
 def check_cmake_options(repo, base, docs_text):
     head = cmake_options(cmake_files(repo, None))
     old = cmake_options(cmake_files(repo, base)) if base else set()
-    added, removed = sorted(head - old), sorted(old - head)
-    word = lambda name: re.search(rf"\b{name}\b", docs_text) is not None
+    # CMAKE_* are CMake's own variables; options that only point tests at data are for developers.
+    added = sorted(o for o in head - old if not o.startswith("CMAKE_"))
+    removed = sorted(o for o in old - head if not o.startswith("CMAKE_"))
+    # also match the -D<OPTION>=... spelling, where no word boundary precedes the name
+    word = lambda name: re.search(rf"(?:(?<![A-Za-z0-9_])|(?<=-D)){name}(?![A-Za-z0-9_])", docs_text) is not None
+    test_only = lambda name: "TEST" in name
     return {"added": added, "removed": removed,
-            "added_undocumented": [o for o in added if not word(o)],
+            "added_undocumented": [o for o in added if not word(o) and not test_only(o)],
+            "added_undocumented_test_options": [o for o in added if not word(o) and test_only(o)],
             "removed_still_documented": [o for o in removed if word(o)]}
 
 
@@ -258,7 +263,8 @@ def check_changelog(heading, section):
     for line in section.splitlines():
         stripped = line.strip()
         if (re.match(r"^\s{4,}[a-z]", line) and not stripped.startswith("- ")
-                and re.search(r"(\.|\.\)|\(#\d+(, #\d+)*\)\.)$", previous.strip())):
+                and re.search(r"(\.|\.\)|\(#\d+(, #\d+)*\)\.)$", previous.strip())
+                and re.search(r"\(#\d+(, #\d+)*\)\.?$", stripped)):
             orphan_lines.append(stripped[:120])
         previous = line if stripped else ""
     return {"heading": heading.strip(), "under_development": "under development" in heading.lower(),

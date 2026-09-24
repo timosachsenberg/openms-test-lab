@@ -50,6 +50,7 @@ ENGINE_FILES = {
     "SpectraST": ["spectrast.exe", "spectrast"], "XTandem": ["tandem.exe", "tandem"],
     "MSGFPlus": ["MSGFPlus.jar"], "LuciPHOr2": ["luciphor2.jar"],
     "MSFragger": [],  # license forbids redistribution; the folder carries only its license
+    "pwiz-bin": ["msconvert.exe", "msconvert"],  # ProteoWizard, Windows installer only
 }
 # Text a dynamic loader prints when an executable cannot start at all.
 LOADER_FAILURE = re.compile(r"error while loading shared libraries|cannot execute binary file|"
@@ -191,7 +192,7 @@ def check_thirdparty(share_dir, timeout):
                         break
             text = (attempt["stdout"] + attempt["stderr"]).strip()
             banner = next((line for line in text.splitlines()
-                           if re.search(r"version|release|X! TANDEM|usage", line, re.I)),
+                           if re.search(r"version|release|X! TANDEM|usage|ProteoWizard", line, re.I)),
                           text.splitlines()[0] if text else "")
             entry.update(executable=payload.name, exit=attempt["exit"],
                          banner=banner.replace("Exception caught: ", "").strip()[:160],

@@ -100,7 +100,7 @@ and do not; **Human** checks need a person with a desktop.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
-| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | The run concludes `success` | Blocking |
+| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | Every step up to and including the desktop smoke test succeeds. The step *Start every installed tool and run upstream TOPP tests* is judged separately, under C1–C3 and F6, so that one finding is not counted twice | Blocking |
 
 ### C. The installed desktop package
 
