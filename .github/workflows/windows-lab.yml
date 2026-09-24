@@ -64,6 +64,11 @@ jobs:
       - name: Install and test OpenMS package
         if: ${{ !cancelled() }}
         run: ./scripts/Install-OpenMS.ps1
+      - name: Start every installed tool and run upstream TOPP tests
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/installed-checks.py
       - name: Collect diagnostics
         if: ${{ !cancelled() }}
         run: ./scripts/Collect-Diagnostics.ps1

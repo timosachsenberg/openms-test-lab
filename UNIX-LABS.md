@@ -77,7 +77,7 @@ The lab inventories the runner **before setup**, **after Python setup**, and **a
 
 The Python smoke test imports pyOpenMS, checks peptide mass, and round-trips a NumPy-backed spectrum through mzML. Packaged .pyi files are syntax-checked. A load trace records actual libraries present in that Python process: /proc/self/maps on Linux, and dyld image enumeration on macOS.
 
-The desktop smoke test starts FileInfo and reads the generated mzML. Native loader logs use LD_DEBUG on Linux and DYLD_PRINT_LIBRARIES on macOS; hardened macOS executables can suppress that trace.
+The desktop smoke test starts FileInfo and reads the generated mzML. The next step then starts every registered tool, replays all upstream TOPP and TOPPAS tests against the installation, and records the bundled OpenSSL, zlib, curl, SQLite and Qt versions (see [What every run asserts](README.md#what-every-run-asserts)). Native loader logs use LD_DEBUG on Linux and DYLD_PRINT_LIBRARIES on macOS; hardened macOS executables can suppress that trace.
 
 Reports include:
 

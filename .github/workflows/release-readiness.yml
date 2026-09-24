@@ -1,0 +1,79 @@
+name: Release readiness
+run-name: Release readiness · ${{ inputs.pyopenms_spec }} · ${{ inputs.openms_package }}
+
+# The automated Linux part of RELEASE-READINESS.md in one run: the candidate's desktop
+# package (every tool, bundled engines, upstream TOPP tests against the installation) and
+# its pyOpenMS (public API against the previous release, user-guide examples, documentation
+# audit of the matching sources). Platform coverage comes from the three package labs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pyopenms_spec:
+        description: nightly, a pinned requirement such as pyopenms==<version>, or an HTTPS wheel URL
+        default: nightly
+        type: string
+      openms_package:
+        description: nightly, a release tag, an HTTPS DEB URL, or none to skip the desktop checks
+        default: nightly
+        type: string
+      baseline:
+        description: Previous release to compare against; blank means the newest pyopenms on PyPI
+        default: ''
+        type: string
+      topp_test_selection:
+        description: Upstream TOPP tests to run on the installation; all, release-gate, or a regex
+        default: all
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      LAB_PYOPENMS_SPEC: ${{ inputs.pyopenms_spec }}
+      LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      LAB_BASELINE: ${{ inputs.baseline }}
+      LAB_TOPP_TEST_SELECTION: ${{ inputs.topp_test_selection }}
+      PYTHONUNBUFFERED: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Resolve the candidate and the baseline release
+        run: python3 scripts/release-readiness.py resolve
+      - name: Install the desktop package and exercise every tool
+        if: ${{ !cancelled() && inputs.openms_package != 'none' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-readiness.py desktop
+      - name: Install candidate and baseline pyOpenMS
+        if: ${{ !cancelled() }}
+        run: python3 scripts/release-readiness.py python
+      - name: Fetch the candidate's sources and the baseline tag
+        if: ${{ !cancelled() }}
+        run: python3 scripts/release-readiness.py source
+      - name: Documentation, API and user-guide checks
+        if: ${{ !cancelled() }}
+        run: python3 scripts/release-readiness.py docs
+      - name: Summarize
+        if: ${{ !cancelled() }}
+        run: python3 scripts/release-readiness.py summary
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-readiness-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 14

@@ -87,6 +87,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/unix-lab.py native
+      - name: Start every installed tool and run upstream TOPP tests
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/installed-checks.py
       - name: Inventory after native installation
         if: ${{ !cancelled() }}
         run: python3 scripts/unix-lab.py baseline-after
