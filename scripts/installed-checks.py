@@ -83,7 +83,12 @@ def check_thermo(bin_dir, env):
 
     The explicit external run shows whether ThermoRawFileParser works as installed (on the
     PATH, plus mono on Linux and macOS). The in-process reader needs a .NET 8 runtime; the hosted
-    runners have one, which a user's machine may lack, so the report lists the runtimes."""
+    runners have one, which a user's machine may lack, so the report lists the runtimes.
+
+    The reader locates .NET through nethost, which consults DOTNET_ROOT and the global install
+    location but not the PATH. The hosted macOS runners keep .NET in ~/.dotnet, so when
+    DOTNET_ROOT is unset, the conversions get it pointed at the installation the PATH leads to,
+    as the reader's own error message tells users to do. The report records that."""
     raw = SOURCE / "src" / "tests" / "topp" / "THIRDPARTY" / "ginkgotoxin-ms-switching.raw"
     if not raw.is_file():
         return {"status": "skipped", "reason": f"{raw.name} is not in the fetched tests"}
@@ -97,6 +102,9 @@ def check_thermo(bin_dir, env):
         listed = subprocess.run([dotnet, "--list-runtimes"], capture_output=True, text=True, errors="replace",
                                 stdin=subprocess.DEVNULL, env=run_env)
         result["dotnet_runtimes"] = listed.stdout.splitlines()
+        if not run_env.get("DOTNET_ROOT"):
+            run_env = dict(run_env, DOTNET_ROOT=str(Path(dotnet).resolve().parent))
+            result["dotnet_root_set_by_check"] = run_env["DOTNET_ROOT"]
     scratch = ROOT / "downloads" / "thermo-check"
     scratch.mkdir(parents=True, exist_ok=True)
     for mode, options in (("default", []), ("external", ["-RawToMzML:reader", "external"]),

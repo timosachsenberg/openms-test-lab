@@ -133,7 +133,9 @@ Desktop package checks:
 - `FileConverter` converts the upstream Thermo test file `ginkgotoxin-ms-switching.raw` with its
   default reader and with each reader explicitly, and the run fails unless the default reader
   writes spectra and the in-process one writes as many. On Windows this uses the PATH a new login
-  session gets from the installer.
+  session gets from the installer. When `DOTNET_ROOT` is unset, it is pointed at the .NET the PATH
+  leads to, because the in-process reader does not search the PATH for it (the macOS runners keep
+  .NET in `~/.dotnet`).
 
 These run in one step, `scripts/installed-checks.py`, which writes `installed-checks.json` (with
 the Thermo results under `thermo`), `topp-tools.json`, `installed-topp-tests.json` and
