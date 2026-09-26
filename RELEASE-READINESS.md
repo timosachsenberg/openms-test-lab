@@ -102,7 +102,7 @@ and do not; **Human** checks need a person with a desktop.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
-| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | Every step up to and including the desktop smoke test succeeds. The step *Start every installed tool and run upstream TOPP tests* is judged separately, under C1–C3 and F6, so that one finding is not counted twice | Blocking |
+| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | Every step up to and including the desktop smoke test succeeds. The step *Start every installed tool and run upstream TOPP tests* is judged separately, under C1–C3, C5 and F6, so that one finding is not counted twice | Blocking |
 
 ### C. The installed desktop package
 
@@ -115,7 +115,7 @@ desktop package (`scripts/installed-checks.py`), so each platform has its own re
 | C2 | The bundled search engines start | same report, `thirdparty` | Every engine under `share/OpenMS/THIRDPARTY` that has a payload starts without a loader error | Blocking |
 | C3 | Upstream TOPP and TOPPAS tests pass on the installation | `scripts/installed-topp-tests.py --select all --fetch-missing` (the labs' default; see [below](#how-c3-replays-the-upstream-tests)) → `reports/installed-topp-tests.json` | No test fails. Every skipped or not-registered test is listed with its reason; one of a tool that is new in this release needs that reason in the report. `package_configuration` matches the package (a wrongly detected build option hides tests) and `replay_notes` is empty | Blocking |
 | C4 | Adapters find the bundled engines on their own | Run `CometAdapter` and `SageAdapter` without `-comet_executable` / `-sage_executable` on each platform | Exit 0 | Advisory |
-| C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader; `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files | mzML written, spectra > 0, same spectrum count from both readers | Blocking for every reader the CHANGELOG announces |
+| C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader; `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files. The package labs run the Thermo part (`thermo` in `reports/installed-checks.json`; on Windows with the PATH the installer sets) | mzML written, spectra > 0, same spectrum count from both readers | Blocking for every reader the CHANGELOG announces |
 | C6 | The DEB installs where it claims to | Linux labs (runs 6 and 7) install it next to `libsqlite3-dev`; compare the `Depends:` line (`dpkg-deb -f <deb> Depends`) with the documented supported distributions | Installs without conflicts; the glibc floor matches the docs | Blocking |
 | C7 | Upgrades order correctly | `dpkg --compare-versions <nightly-version> lt <release-version>`; install the previous release, then the candidate | A nightly sorts below its release; the upgrade leaves no files from the old version | Advisory |
 
@@ -161,7 +161,7 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
     round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
     replayed.
-- **Cost:** the whole installed-checks step, including C1, C2 and F6, takes 4 to 7 minutes on
+- **Cost:** the whole installed-checks step, including C1, C2, the Thermo part of C5 and F6, takes 4 to 7 minutes on
   the hosted runners for about 2,200 tests (`--jobs` defaults to half the cores). The TOPPAS example pipelines take a good part of that. `--select
   release-gate` is the quick subset: new tools, workflows, native formats, adapters and
   pipelines.
