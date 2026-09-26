@@ -1,0 +1,42 @@
+name: MaRaCluster crash probe
+run-name: MaRaCluster crash probe · ${{ inputs.iterations || '60' }} runs per mode
+
+# OpenMS/OpenMS#10259: does MaRaCluster 1.04.1's Windows build crash in its batch step, and when?
+# See scripts/Probe-MaRaCluster.ps1.
+on:
+  push:
+    branches: [claude/nifty-hawking-bflcai]
+    paths:
+      - .github/workflows/maracluster-probe.yml
+      - scripts/Probe-MaRaCluster.ps1
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Runs per mode
+        default: '60'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Probe MaRaCluster
+        run: ./scripts/Probe-MaRaCluster.ps1 -Iterations ${{ inputs.iterations || '60' }}
+      - name: Upload report and crash dumps
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: maracluster-probe-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+          if-no-files-found: warn
