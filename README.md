@@ -129,10 +129,15 @@ Desktop package checks:
   files with the package's own build options, including every example pipeline the package
   ships (`scripts/installed-topp-tests.py`);
 - the versions of bundled OpenSSL, zlib, curl, SQLite and Qt are recorded, and an OpenSSL copy
-  affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`).
+  affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`);
+- `FileConverter` converts the upstream Thermo test file `ginkgotoxin-ms-switching.raw` with its
+  default reader and with each reader explicitly, and the run fails unless the default reader
+  writes spectra and the in-process one writes as many. On Windows this uses the PATH a new login
+  session gets from the installer.
 
-These three run in one step, `scripts/installed-checks.py`, which writes `installed-checks.json`,
-`topp-tools.json`, `installed-topp-tests.json` and `bundled-libs.json`.
+These run in one step, `scripts/installed-checks.py`, which writes `installed-checks.json` (with
+the Thermo results under `thermo`), `topp-tools.json`, `installed-topp-tests.json` and
+`bundled-libs.json`.
 
 Inventory collected for every run, to make a later diff meaningful:
 
