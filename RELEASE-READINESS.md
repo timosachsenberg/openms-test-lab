@@ -102,7 +102,7 @@ and do not; **Human** checks need a person with a desktop.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
-| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | Every step up to and including the desktop smoke test succeeds. The step *Start every installed tool and run upstream TOPP tests* is judged separately, under C1–C3 and F6, so that one finding is not counted twice | Blocking |
+| B1–B9 | Each run of the release matrix | The package labs; what every run asserts is listed in the [README](README.md#what-every-run-asserts) | Every step up to and including the desktop smoke test succeeds. The step *Start every installed tool and run upstream TOPP tests* is judged separately, under C1–C3, C5 and F6, so that one finding is not counted twice | Blocking |
 
 ### C. The installed desktop package
 
@@ -161,7 +161,7 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
     round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
     replayed.
-- **Cost:** the whole installed-checks step, including C1, C2 and F6, takes 4 to 7 minutes on
+- **Cost:** the whole installed-checks step, including C1, C2, the Thermo part of C5 and F6, takes 4 to 7 minutes on
   the hosted runners for about 2,200 tests (`--jobs` defaults to half the cores). The TOPPAS example pipelines take a good part of that. `--select
   release-gate` is the quick subset: new tools, workflows, native formats, adapters and
   pipelines.
