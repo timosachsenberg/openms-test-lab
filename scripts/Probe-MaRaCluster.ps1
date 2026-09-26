@@ -10,8 +10,10 @@
 
   Each mode runs the adapter's batch command (-p 20.0ppm -t -10.0 -c -10.0) Iterations times, either
   alone or as two concurrent processes (ctest starts TOPP_MaRaClusterAdapter_1 and _2 together), and
-  with or without OMP_NUM_THREADS=1. 0.05.0 runs the concurrent mode as a control. Windows Error
-  Reporting keeps a minidump of every crash, and cdb, if the runner has it, prints the first one.
+  with or without OMP_NUM_THREADS=1. The index-first modes run 'index' with OMP_NUM_THREADS=1 before
+  'batch', which then reuses the converted files: the conversion runs single-threaded, the
+  clustering does not. 0.05.0 runs the concurrent mode as a control. Windows Error Reporting keeps a
+  minidump of every crash, and cdb, if the runner has it, prints the first one.
 #>
 param(
   [int]$Iterations = 60
@@ -54,14 +56,14 @@ New-ItemProperty "$wer\LocalDumps\maracluster.exe" -Name DumpCount -Value 50 -Pr
 New-ItemProperty $wer -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
 New-ItemProperty $wer -Name Disabled -Value 0 -PropertyType DWord -Force | Out-Null
 
-function Start-Batch([string]$version, [string]$tag, [bool]$singleThread) {
+function Start-MaRaCluster([string]$version, [string]$tag, [string]$step, [string[]]$extra, [bool]$singleThread) {
   $dir = Join-Path $root "runs/$tag"
   New-Item -ItemType Directory -Force $dir | Out-Null
   $list = Join-Path $dir 'file_list.txt'
   Set-Content -Path $list -Value $inputs -Encoding ascii
   $psi = [System.Diagnostics.ProcessStartInfo]::new($exe[$version])
-  foreach ($arg in 'batch', '-b', ($list -replace '\\', '/'), '-f', (($dir -replace '\\', '/') + '/'),
-                   '-a', $tag, '-p', '20.0ppm', '-t', '-10.0', '-c', '-10.0') {
+  foreach ($arg in @($step, '-b', ($list -replace '\\', '/'), '-f', (($dir -replace '\\', '/') + '/'),
+                     '-a', $tag, '-p', '20.0ppm') + $extra) {
     $psi.ArgumentList.Add($arg)
   }
   $psi.UseShellExecute = $false
@@ -71,14 +73,25 @@ function Start-Batch([string]$version, [string]$tag, [bool]$singleThread) {
   if ($singleThread) { $psi.Environment['OMP_NUM_THREADS'] = '1' }
   $process = [System.Diagnostics.Process]::Start($psi)
   [pscustomobject]@{
-    Tag = $tag
+    Tag = "$tag ($step)"
     Process = $process
     Out = $process.StandardOutput.ReadToEndAsync()
     Err = $process.StandardError.ReadToEndAsync()
   }
 }
 
+# The batch step; with -IndexFirst, as the adapter does it: 'index' single-threaded, then 'batch',
+# which reuses the index. A failed index run is returned instead of the batch.
+function Start-Batch([string]$version, [string]$tag, [bool]$singleThread, [bool]$indexFirst) {
+  if ($indexFirst) {
+    $index = Wait-Batch (Start-MaRaCluster $version $tag 'index' @() $true)
+    if ($index.ExitCode -ne 0) { return [pscustomobject]@{ Done = $index } }
+  }
+  Start-MaRaCluster $version $tag 'batch' @('-t', '-10.0', '-c', '-10.0') $singleThread
+}
+
 function Wait-Batch($run) {
+  if ($run.PSObject.Properties['Done']) { return $run.Done }
   # A hang counts as a failure too; int.MaxValue marks it.
   if (-not $run.Process.WaitForExit(300000)) {
     $run.Process.Kill($true)
@@ -93,10 +106,12 @@ function Wait-Batch($run) {
 }
 
 $modes = @(
-  @{ Name = '1.04.1, two concurrent processes'; Version = '1.04.1'; Concurrent = 2; SingleThread = $false },
-  @{ Name = '1.04.1, one process'; Version = '1.04.1'; Concurrent = 1; SingleThread = $false },
-  @{ Name = '1.04.1, two concurrent processes, OMP_NUM_THREADS=1'; Version = '1.04.1'; Concurrent = 2; SingleThread = $true },
-  @{ Name = '0.05.0, two concurrent processes'; Version = '0.05.0'; Concurrent = 2; SingleThread = $false }
+  @{ Name = '1.04.1, one process'; Version = '1.04.1'; Concurrent = 1; SingleThread = $false; IndexFirst = $false },
+  @{ Name = '1.04.1, index with OMP_NUM_THREADS=1, then batch; one process'; Version = '1.04.1'; Concurrent = 1; SingleThread = $false; IndexFirst = $true },
+  @{ Name = '1.04.1, index with OMP_NUM_THREADS=1, then batch; two concurrent processes'; Version = '1.04.1'; Concurrent = 2; SingleThread = $false; IndexFirst = $true },
+  @{ Name = '1.04.1, two concurrent processes'; Version = '1.04.1'; Concurrent = 2; SingleThread = $false; IndexFirst = $false },
+  @{ Name = '1.04.1, two concurrent processes, OMP_NUM_THREADS=1'; Version = '1.04.1'; Concurrent = 2; SingleThread = $true; IndexFirst = $false },
+  @{ Name = '0.05.0, two concurrent processes'; Version = '0.05.0'; Concurrent = 2; SingleThread = $false; IndexFirst = $false }
 )
 
 $summary = [System.Collections.Generic.List[string]]::new()
@@ -108,7 +123,7 @@ foreach ($mode in $modes) {
   $results = [System.Collections.Generic.List[object]]::new()
   $watch = [System.Diagnostics.Stopwatch]::StartNew()
   for ($i = 1; $i -le $Iterations; $i++) {
-    $runs = foreach ($c in 1..$mode.Concurrent) { Start-Batch $mode.Version "m$modeIndex-i$i-p$c" $mode.SingleThread }
+    $runs = foreach ($c in 1..$mode.Concurrent) { Start-Batch $mode.Version "m$modeIndex-i$i-p$c" $mode.SingleThread $mode.IndexFirst }
     foreach ($run in $runs) { $results.Add((Wait-Batch $run)) }
   }
   $crashes = @($results | Where-Object { $_.ExitCode -ne 0 })
