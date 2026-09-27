@@ -88,6 +88,7 @@ evidence.
 - [ ] G7 Conda packages build and install —
 - [ ] G8 Documentation and links point at the release —
 - [ ] G9 Container images exist for the tag —
+- [ ] G10 The published Windows installer is signed —
 
 ### H. Human checks
 - [ ] H1 GUI on each platform —

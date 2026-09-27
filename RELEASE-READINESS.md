@@ -219,7 +219,7 @@ the candidate files.
 | F4 | Stubs are valid Python | `compile()` every `.pyi` under `-W error`; runtime namespace vs stubs | No errors; no undeclared public names | Advisory |
 | F5 | `manylinux` compliance | `auditwheel show` | Consistent with the tag | Blocking |
 | F6 | No known-vulnerable bundled library | `scripts/bundled-libs.py <installation or unpacked wheel>` → `reports/bundled-libs.json`: versions of bundled OpenSSL, zlib, curl, SQLite and Qt; OpenSSL is judged against the advisories on openssl-library.org, the others are checked by hand against their projects' advisories | No bundled library with an unfixed High or Critical CVE | Blocking |
-| F7 | Installers are signed | `signtool verify /pa` on the `.exe`; `pkgutil --check-signature` and `spctl -a -vv -t install` on the `.pkg` | Valid signature, notarized `.pkg` | Blocking |
+| F7 | Installers are signed | `pkgutil --check-signature` and `spctl -a -vv -t install` on the `.pkg`. A maintainer signs the Windows `.exe` by hand before the release is published (maintainer decision, 2026-09-27), so the `.exe` of a nightly or RC is unsigned by design; G10 checks it on the release | Valid signature, notarized `.pkg` | Blocking |
 | F8 | Third-party licenses ship with what they cover | List bundled third-party components (installer `THIRDPARTY/`, managed Thermo assemblies, vendored libraries) against `share/OpenMS/LICENSES/` | Each component that requires its license to accompany it has its license file | Blocking |
 | F9 | The DEB does not collide with the distribution | `dpkg-deb -c` against `dpkg -S` ownership on the target distribution; vendored libraries in a private directory | No path owned by a distribution package; no system library copied into `/usr/lib` | Advisory |
 
@@ -239,6 +239,7 @@ then check:
 | G7 | Conda packages build and install | The bioconda recipe PR for `<version>`; then `conda create -n t --strict-channel-priority -c conda-forge -c bioconda python=3.12 openms pyopenms` and `OpenMSInfo`, `python -c "import pyopenms"` | Recipe CI green; environment works | Blocking for the conda channel |
 | G8 | Documentation and links point at the release | readthedocs builds for the tag; `README.md`, installation pages and `release-announcement.txt` link to the current download server | Builds exist; links resolve to this version | Blocking |
 | G9 | Container images exist for the tag | `containerdeploy.yml` run | Images published | Advisory |
+| G10 | The published Windows installer is signed | After the maintainer has signed the `.exe` by hand: `signtool verify /pa /v` or `osslsigncode verify` on the copies in `archive.openms.de/openms/OpenMSInstaller/release/<version>/` and in the GitHub release. `release.yml` uploads the unsigned `.exe` to both places, and marks it latest, as soon as the tag build finishes; replace both copies before the website update is merged or the release is announced | Valid Authenticode signature with a timestamp; both copies identical | Blocking, for the release |
 
 ### H. Human checks
 
