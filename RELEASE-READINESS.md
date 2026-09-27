@@ -252,11 +252,15 @@ then check:
 ## Supported platforms (3.6)
 
 Checks B, C6 and F1 compare the artifacts with what the release claims. The claims live in the
-CHANGELOG (*Dependencies*) and `doc/openms/docs/about/installation/`. At the time of writing
-they are: no macOS Intel builds; macOS 14 or newer (CHANGELOG), although the wheels are
-tagged `macosx_15_0` (`src/pyOpenMS/pyproject.toml` sets `MACOSX_DEPLOYMENT_TARGET = "15.0"`);
-Python 3.11 or newer; DEB for glibc 2.38 or newer. Resolve such disagreements before a
-release; the report flags them under F1 and C6.
+CHANGELOG (*Dependencies*) and `doc/openms/docs/about/installation/`. As of 2026-09-27 they are:
+- no macOS Intel builds;
+- macOS 15 or newer (CHANGELOG, since OpenMS/OpenMS#10285). This matches the wheels'
+  `macosx_15_0` tag (`src/pyOpenMS/pyproject.toml` sets `MACOSX_DEPLOYMENT_TARGET = "15.0"`),
+  but the `.pkg` does not enforce it until OpenMS/OpenMS#10286;
+- Python 3.11 or newer;
+- DEB for glibc 2.38 or newer (`installation-on-gnu-linux.md`, since OpenMS/OpenMS#10277).
+
+Resolve disagreements between these before a release; the report flags them under F1 and C6.
 
 ## The former wiki checklist
 
