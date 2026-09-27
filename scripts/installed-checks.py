@@ -8,16 +8,19 @@ step then
      from (the Revision that `FileInfo --help` prints) and replays the upstream TOPP and
      TOPPAS pipeline tests against the installed binaries (scripts/installed-topp-tests.py):
      all of them by default, or the selection in LAB_TOPP_TEST_SELECTION (release-gate, all,
-     or a regex on test names).
+     or a regex on test names), and
+  3. converts the Thermo .raw file among those tests with FileConverter's default reader and
+     with each reader explicitly (C5 for Thermo; see check_thermo).
 
 Nothing is installed or changed on the system. When no desktop package was installed the
 step records that and succeeds. It exits non-zero when either check failed, after writing
-both reports, so the lab run shows red while later steps still run.
+all reports, so the lab run shows red while later steps still run.
 """
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -52,6 +55,75 @@ def fetch_tests(commit, env):
                    check=True, env=env)
     subprocess.run(git + ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit], check=True, env=env)
     subprocess.run(git + ["checkout", "-q", "FETCH_HEAD"], check=True, env=env)
+
+
+def session_env(env):
+    """The environment of a new login session after the installation.
+
+    The Windows installer appends bin and every THIRDPARTY folder to the PATH in the registry,
+    which the job's later steps do not pick up: a user's new session sees the system PATH
+    followed by the user PATH. Elsewhere the environment is left as it is."""
+    if not sys.platform.startswith("win"):
+        return env
+    import winreg
+    parts = []
+    for root, key in ((winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                      (winreg.HKEY_CURRENT_USER, "Environment")):
+        try:
+            with winreg.OpenKey(root, key) as handle:
+                parts.append(os.path.expandvars(winreg.QueryValueEx(handle, "Path")[0]))
+        except OSError:
+            pass
+    return dict(env, PATH=";".join(part.strip(";") for part in parts if part))
+
+
+def check_thermo(bin_dir, env):
+    """C5 for Thermo: FileConverter converts the fixture with its default reader, and the
+    in-process reader writes as many spectra.
+
+    The explicit external run shows whether ThermoRawFileParser works as installed (on the
+    PATH, plus mono on Linux and macOS). The in-process reader needs a .NET 8 runtime; the hosted
+    runners have one, which a user's machine may lack, so the report lists the runtimes.
+
+    The reader locates .NET through nethost, which consults DOTNET_ROOT and the global install
+    location but not the PATH. The hosted macOS runners keep .NET in ~/.dotnet, so when
+    DOTNET_ROOT is unset, the conversions get it pointed at the installation the PATH leads to,
+    as the reader's own error message tells users to do. The report records that."""
+    raw = SOURCE / "src" / "tests" / "topp" / "THIRDPARTY" / "ginkgotoxin-ms-switching.raw"
+    if not raw.is_file():
+        return {"status": "skipped", "reason": f"{raw.name} is not in the fetched tests"}
+    run_env = session_env(env)
+    search_path = run_env.get("PATH", "")
+    result = {"input": raw.name,
+              "thermorawfileparser_on_path": shutil.which("ThermoRawFileParser.exe", path=search_path),
+              "mono_on_path": shutil.which("mono", path=search_path)}
+    dotnet = shutil.which("dotnet", path=search_path)
+    if dotnet:
+        listed = subprocess.run([dotnet, "--list-runtimes"], capture_output=True, text=True, errors="replace",
+                                stdin=subprocess.DEVNULL, env=run_env)
+        result["dotnet_runtimes"] = listed.stdout.splitlines()
+        if not run_env.get("DOTNET_ROOT"):
+            run_env = dict(run_env, DOTNET_ROOT=str(Path(dotnet).resolve().parent))
+            result["dotnet_root_set_by_check"] = run_env["DOTNET_ROOT"]
+    scratch = ROOT / "downloads" / "thermo-check"
+    scratch.mkdir(parents=True, exist_ok=True)
+    for mode, options in (("default", []), ("external", ["-RawToMzML:reader", "external"]),
+                          ("inprocess", ["-RawToMzML:reader", "inprocess"])):
+        out = scratch / f"{mode}.mzML"
+        out.unlink(missing_ok=True)
+        try:
+            converted = subprocess.run([str(bin_dir / f"FileConverter{EXE}"), "-in", str(raw), "-out", str(out),
+                                        "-no_progress", *options], capture_output=True, text=True, errors="replace",
+                                       stdin=subprocess.DEVNULL, env=run_env, timeout=900)
+            code, log = converted.returncode, converted.stdout + converted.stderr
+        except subprocess.TimeoutExpired:
+            code, log = "timeout", ""
+        spectra = out.read_text(encoding="utf-8", errors="replace").count("<spectrum ") if out.is_file() else 0
+        result[mode] = {"exit": code, "spectra": spectra, "log_tail": log.strip().splitlines()[-12:]}
+    default, inprocess = result["default"], result["inprocess"]
+    passed = default["exit"] == 0 and default["spectra"] > 0 and inprocess["spectra"] == default["spectra"]
+    result["status"] = "passed" if passed else "failed"
+    return result
 
 
 def main():
@@ -96,8 +168,9 @@ def main():
     libs = [python, str(ROOT / "scripts/bundled-libs.py"), "--report", str(REPORTS / "bundled-libs.json")]
     libs += (["/", "--file-list", str(package_files)] if package_files.exists() else [str(bin_dir.parent)])
     summary["bundled_libs_exit"] = subprocess.run(libs, env=child_env).returncode
+    summary["thermo"] = check_thermo(bin_dir, child_env)
     failed = (summary.get("tools_exit") or summary.get("upstream_exit") or summary.get("bundled_libs_exit")
-              or summary.get("upstream_tests") == "error")
+              or summary.get("upstream_tests") == "error" or summary["thermo"]["status"] == "failed")
     summary["status"] = "failed" if failed else "passed"
     (REPORTS / "installed-checks.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))

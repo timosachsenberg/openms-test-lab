@@ -91,7 +91,7 @@ Reports include:
 
 Download the **macos-lab-reports-...** or **linux-lab-reports-...** artifacts. A setup-report artifact is available before SSH starts; final reports and exports upload when the session finishes. Artifacts are retained for seven days.
 
-A hosted runner includes many preinstalled dependencies. On Linux, a library supplied by a system package is identified as such, not assumed to be part of bare Linux. On macOS, absolute Homebrew paths can still resolve even with a minimal PATH. Static Mach-O entries are recorded without pretending to emulate all dyld resolution. Tests do not cover every GUI plugin, vendor reader, delayed load or Thermo RAW/.NET path. Inspect the evidence before concluding a package is self-contained.
+A hosted runner includes many preinstalled dependencies. On Linux, a library supplied by a system package is identified as such, not assumed to be part of bare Linux. On macOS, absolute Homebrew paths can still resolve even with a minimal PATH. Static Mach-O entries are recorded without pretending to emulate all dyld resolution. Tests do not cover every GUI plugin, vendor reader or delayed load; of the vendor formats, only one Thermo .raw file is converted, with each FileConverter reader. Inspect the evidence before concluding a package is self-contained.
 
 Standalone ldd checks can report a dependency as unresolved even when importing the parent extension succeeds, because the parent's runtime paths or preloaded libraries can supply it. These entries are investigation leads; compare them with the actual Python load trace and package inventory before calling a library missing.
 
