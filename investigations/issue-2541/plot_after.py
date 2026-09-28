@@ -35,8 +35,8 @@ for side in ("top", "right", "left"):
 ax.spines["bottom"].set_color(AXIS)
 ax.tick_params(axis="x", colors=MUTED, labelcolor=INK2)
 ax.tick_params(axis="y", length=0)
-ax.legend(loc="lower right", frameon=False, labelcolor=INK2, fontsize=9)
-fig.suptitle("MapAlignerIdentification without a reference, simulated runs (3 seeds each)",
+ax.legend(loc="upper right", frameon=False, labelcolor=INK2, fontsize=9)
+fig.suptitle("MapAlignerIdentification without a reference: old vs. new default (simulated runs, 3 seeds each)",
              x=0.01, ha="left", fontsize=11, color=INK)
 fig.tight_layout(rect=(0, 0, 1, 0.95))
 fig.savefig("issue2541_after.png", facecolor=SURFACE)

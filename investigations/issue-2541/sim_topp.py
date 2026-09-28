@@ -25,10 +25,13 @@ def store_runs(runs, workdir):
         prot.setSearchEngine("simulation")
         prot.setScoreType("q-value")
         prot.setHigherScoreBetter(False)
+        # iterating a PeptideIdentificationList yields copies - build a new list:
+        tagged = oms.PeptideIdentificationList()
         for pid in plist:
             pid.setIdentifier("run")
+            tagged.push_back(pid)
         path = os.path.join(workdir, f"run{r + 1}.idXML")
-        oms.IdXMLFile().store(path, [prot], plist)
+        oms.IdXMLFile().store(path, [prot], tagged)
         paths.append(path)
     return paths
 
