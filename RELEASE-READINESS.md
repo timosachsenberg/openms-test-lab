@@ -138,6 +138,8 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
   - `DISABLE_OPENSWATH`, `WITH_WNETALIGN` and `WITH_GUI`: whether OpenSwathWorkflow,
     FeatureLinkerWNet and ImageCreator are registered.
   - `WITH_OPENTIMS`: whether `d` is among FileConverter's input formats.
+  - `WITH_THERMO_RAW`: whether FileConverter's INI allows `inprocess` for
+    `RawToMzML:reader`; only the in-process Thermo reader needs the build option.
   - `ENABLE_TDL`: whether `FileInfo -write_cwl` works.
   - `HAVE_ZLIB_NG`: whether the zlib the tools load is zlib-ng.
   - The platform variables come from the runner. `-D NAME=VALUE` overrides any of these.
@@ -156,9 +158,10 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 - **Not covered:**
   - Tests whose `if()` is false for the package are reported as not registered, with the
     condition and the values it read. On the 3.6 nightly these are: Bruker DDA data
-    (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), a Mascot server, a licensed
-    MSFragger, Novor, the SpectraST tests that upstream disables (`AND FALSE`), and the CWL
-    round trip without TDL.
+    (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), Thermo data, which upstream fetches
+    only with `ENABLE_THERMO_RAW_TESTS` (`-D THERMO_RAW_TEST_DATA=<file.raw>` enables them), a
+    Mascot server, a licensed MSFragger, Novor, the SpectraST tests that upstream disables
+    (`AND FALSE`), and the CWL round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
     replayed.
 - **Cost:** the whole installed-checks step, including C1, C2, the Thermo part of C5 and F6, takes 4 to 7 minutes on
