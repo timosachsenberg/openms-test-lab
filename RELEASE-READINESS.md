@@ -159,7 +159,9 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
   - Tests whose `if()` is false for the package are reported as not registered, with the
     condition and the values it read. On the 3.6 nightly these are: Bruker DDA data
     (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), Thermo data, which upstream fetches
-    only with `ENABLE_THERMO_RAW_TESTS` (`-D THERMO_RAW_TEST_DATA=<file.raw>` enables them), a
+    only with `ENABLE_THERMO_RAW_TESTS` (`-D THERMO_RAW_TEST_DATA=<file.raw>` enables them),
+    DIAuditor's DIA data (`-D OPENTIMS_DIA_TEST_DATA=<dir.d>` and
+    `-D THERMO_FAIMS_DIA_TEST_DATA=<file.raw>`), a
     Mascot server, a licensed MSFragger, Novor, the SpectraST tests that upstream disables
     (`AND FALSE`), and the CWL round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
