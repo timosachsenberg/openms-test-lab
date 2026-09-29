@@ -57,7 +57,7 @@ def main():
     modes = {
         "before alignment": None,
         "old default (consensus)": ["-algorithm:auto_reference", "consensus"],
-        "new default (most_ids)": [],
+        "new default (best_run)": [],
     }
     results = {}
     for label, n_runs, spread, warp in scenarios:
