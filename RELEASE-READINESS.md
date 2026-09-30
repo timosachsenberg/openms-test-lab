@@ -5,6 +5,9 @@ It is written so that an agent can be told *"check our nightlies and determine w
 release"* and carry it out: every check names the command or workflow that produces its
 evidence, what counts as a pass, and whether a failure blocks the release.
 
+How to *make* the release (tagging, PyPI, Bioconda, docs, announcement) is
+[RELEASE-PROCESS.md](RELEASE-PROCESS.md); it names the checks below that gate each step.
+
 A filled-in example is [readiness/2026-09-24-3.6.0-nightly.md](readiness/2026-09-24-3.6.0-nightly.md);
 start new reports from [readiness/TEMPLATE.md](readiness/TEMPLATE.md).
 
@@ -15,8 +18,8 @@ A run of this procedure ends with exactly one verdict:
 | Verdict | Meaning |
 | --- | --- |
 | **NOT READY** | A blocking check in A–F failed or was not run for the chosen revision. |
-| **READY FOR RC** | Every blocking check in A–F passed on one revision. What only a tag build exercises (G) and what needs a person (H) is still open: tag a release candidate. |
-| **READY TO RELEASE** | Additionally, G passed on the release candidate's own artifacts and a maintainer signed off H. |
+| **READY FOR RC** | Every blocking check in A–F passed on one revision. What only a tag build exercises (G) and what needs a person (H) is still open: tag the release (release candidates are broken, see [RELEASE-PROCESS.md](RELEASE-PROCESS.md#3-release-candidate-optional-untested)) and check G before announcing it. |
+| **READY TO RELEASE** | Additionally, G passed on the tag build's own artifacts and a maintainer signed off H. |
 
 Rules that keep the verdict honest:
 
@@ -190,7 +193,7 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 | E7 | Environment variables are documented | `DOC-ENV-VARS` | Each OpenMS-specific variable the code reads is named in user documentation | Advisory |
 | E8 | The CHANGELOG is clean | `CHANGELOG-LINT` | No duplicated bullets or orphaned text; at release, the heading carries a date instead of "under development" | Blocking at release |
 | E9 | Documentation builds without warnings | Build the `doc` target and run `Doxygen_Warning_test` (OpenMS `doc/CMakeLists.txt`); run `doc-validate.yml` (Sphinx for `doc/openms` and `doc/pyopenms`) on the candidate revision | Zero Doxygen warnings; both Sphinx builds succeed | Blocking |
-| E10 | The online documentation of the version exists | For every tool, the `Full documentation:` URL of `--help` (`doc_url` in `topp-tools.json`); `https://pyopenms.readthedocs.io/en/<version>/` | HTTP 200 everywhere | Blocking after deployment |
+| E10 | The online documentation of the version exists | For every tool, the `Full documentation:` URL of `--help` (`doc_url` in `topp-tools.json`); `https://pyopenms.readthedocs.io/en/v<version>/` (before 3.6.0 `release-<version>`), which exists once the readthedocs version is activated ([RELEASE-PROCESS.md, step 7](RELEASE-PROCESS.md#7-documentation)) | HTTP 200 everywhere | Blocking after deployment |
 
 #### E4: headline features
 
@@ -226,16 +229,19 @@ the candidate files.
 
 ### G. Release mechanics: only a tag build exercises them
 
-A nightly cannot prove these. Push a release-candidate tag (`v<version>-rc<N>`) once A–F pass,
-then check:
+A nightly cannot prove these. They are checked on the build of the release tag `v<version>`,
+before PyPI, Bioconda and the announcement ([RELEASE-PROCESS.md, step 5](RELEASE-PROCESS.md#5-what-the-tag-starts-and-how-to-check-it)).
+A release-candidate tag `v<version>-rc<N>` would be checked the same way, but that path is
+broken today ([step 3](RELEASE-PROCESS.md#3-release-candidate-optional-untested)): its deploy
+likely fails, and its packages cannot pass G2.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
-| G1 | The RC builds and uploads | `release.yml` run of the tag | Green; installers in `archive.openms.de/openms/OpenMSInstaller/rc<N>/<version>/`, docs under `Documentation/rc<N>/<version>/` | Blocking |
+| G1 | The tag builds and uploads | `release.yml` run of the tag | Green; installers in `archive.openms.de/openms/OpenMSInstaller/release/<version>/`, docs under `Documentation/release/<version>/`, both `latest` symlinks moved; the GitHub release *Release &lt;version&gt;* carries the installers and `OpenMS-<version>.tar.gz` | Blocking |
 | G2 | Tag builds carry a clean version | `FileInfo --help`, installer file names, the macOS application folder | `Version: <version>`, with no `-pre-…` suffix | Blocking |
 | G3 | The source tarball is right | The tarball artifact of the tag run | Named as the bioconda recipe expects, without `.ccache` or `_thirdparty`, of plausible size | Blocking |
 | G4 | Workflows triggered by the tag pass | Actions tab of OpenMS/OpenMS for the tag | Green, or a known and accepted exception | Advisory |
-| G5 | The RC's own artifacts pass B and C | The release matrix with the RC's URLs (`openms_package=<https URL>`, `pyopenms_spec=<wheel URL>`) | As B and C | Blocking |
+| G5 | The tag build's own artifacts pass B and C | The release matrix with `openms_package=v<version>` and `pyopenms_spec=<wheel URL>` from `archive.openms.de/openms/pyopenms/release/<version>/`, before the PyPI upload | As B and C | Blocking |
 | G6 | PyPI serves the release everywhere | After upload: every lab with `pyopenms_spec=pyopenms==<version>` | Every platform installs the binary wheel | Blocking, after upload |
 | G7 | Conda packages build and install | The bioconda recipe PR for `<version>`; then `conda create -n t --strict-channel-priority -c conda-forge -c bioconda python=3.12 openms pyopenms` and `OpenMSInfo`, `python -c "import pyopenms"` | Recipe CI green; environment works | Blocking for the conda channel |
 | G8 | Documentation and links point at the release | readthedocs builds for the tag; `README.md`, installation pages and `release-announcement.txt` link to the current download server | Builds exist; links resolve to this version | Blocking |

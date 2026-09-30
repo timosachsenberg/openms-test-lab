@@ -25,7 +25,7 @@ These are standard GitHub-hosted VMs. See [GitHub's runner reference](https://do
 | python_version | Defaults to 3.12; choose a version supported by your wheel. |
 | pyopenms_spec | **nightly** for the current nightly wheel, a PyPI requirement such as pyopenms==<version>, a direct HTTPS wheel URL, or **none** to skip. |
 | extra_packages | Semicolon-separated requirements, for example numpy==2.2.6;pandas. Persistent extras can also go in requirements.txt. |
-| openms_package | **nightly** for the current nightly installer, **latest** for the newest release, a release tag such as release/<version>, a public HTTPS PKG/DEB URL, or **none** to skip desktop installation. |
+| openms_package | **nightly** for the current nightly installer, **latest** for the newest release, a release tag such as v<version> (release/<version> before 3.6.0), a public HTTPS PKG/DEB URL, or **none** to skip desktop installation. |
 | wheel_run_id | Optional completed upstream OpenMS wheel-workflow run ID. Selects a compatible wheel and overrides pyopenms_spec. |
 | debug | Enabled by default. Opens SSH after checks, including if a check failed. Disable for unattended testing. |
 | session_minutes | 5, 15, 30, 60 or 120; defaults to 60. |

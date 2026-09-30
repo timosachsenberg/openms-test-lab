@@ -20,6 +20,15 @@ commands that produce the evidence. In short:
    `readiness/<date>-<version>-<candidate>.md`, fill in every checkbox with evidence, and end
    with one verdict: NOT READY, READY FOR RC or READY TO RELEASE.
 
+## "Make the release" / "Publish X.Y.Z"
+
+Follow [RELEASE-PROCESS.md](RELEASE-PROCESS.md) from top to bottom: prepare `develop`, qualify
+the candidate with the procedure above, tag, check the tag build, publish to PyPI, readthedocs
+and Bioconda, announce, clean up. Steps marked **Maintainer** publish something: prepare them
+and say what to run, and carry one out only when a maintainer asks in writing for that step.
+Never move a published tag, and never dispatch `upload-to-pypi` on anything but a final
+`vX.Y.Z` tag whose wheels passed G5.
+
 ## Rules
 
 - A check you could not run is **not run**, never passed. Say why.
@@ -43,5 +52,5 @@ python3 scripts/installed-topp-tests.py --openms <OpenMS checkout> --select all 
 python3 scripts/pyopenms-api.py snapshot --out <file>                                       # in each venv
 python3 scripts/pyopenms-api.py diff <old> <new> --docs <user_guide> --changelog <CHANGELOG> # D1, D4
 python3 scripts/doc-examples.py --python <venv python> --docs <user_guide> [--baseline <report>]  # D2, D3
-python3 scripts/release-docs-audit.py --openms <OpenMS checkout> --base release/<previous>    # A3, E1-E8
+python3 scripts/release-docs-audit.py --openms <OpenMS checkout> --base v<previous>    # A3, E1-E8; release/<previous> before 3.6.0
 ```

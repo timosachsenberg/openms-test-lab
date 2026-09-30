@@ -14,6 +14,8 @@ See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inp
 
 [Package audit: OpenMS 3.5.0](PACKAGE-AUDIT-3.5.0.md) records what these labs and a full static analysis of every published 3.5.0 artifact found, with the lab run IDs behind each result.
 
+**Making a release:** [RELEASE-PROCESS.md](RELEASE-PROCESS.md) walks through every step from preparing `develop` to the announcement, and names the checks that gate each one.
+
 **Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
 
 ## Package sources
@@ -25,7 +27,7 @@ on Windows, macOS and Linux:
 | --- | --- | --- |
 | `nightly` | newest compatible wheel on [pypi.openms.de](https://pypi.openms.de/simple/pyopenms/) | newest dated folder under [archive.openms.de nightly](https://archive.openms.de/openms/OpenMSInstaller/nightly/) |
 | `latest` | — (use a pinned requirement instead) | newest GitHub release for this platform |
-| a pinned value | a PyPI requirement, e.g. `pyopenms==<version>` | a release tag, e.g. `release/<version>` |
+| a pinned value | a PyPI requirement, e.g. `pyopenms==<version>` | a release tag, e.g. `v<version>` (`release/<version>` before 3.6.0) |
 | an HTTPS URL | that exact `.whl` | that exact `.deb`, `.pkg`, `.exe`, `.msi` or `.zip` |
 | `none` | nothing installed | nothing installed |
 
@@ -210,7 +212,7 @@ The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an
 | `python_version` | `3.12` | `3.11`, `3.12`, `3.13` (the selected wheel must support it) |
 | `pyopenms_spec` | `nightly` | `nightly`, `pyopenms==<version>`, direct HTTPS `.whl` URL, `none` to skip |
 | `extra_packages` | blank | `numpy==2.2.6;pandas` (semicolon separates requirements) |
-| `openms_package` | `nightly` | `nightly`, `latest`, `release/<version>`, public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
+| `openms_package` | `nightly` | `nightly`, `latest`, a release tag (`v<version>`, before 3.6.0 `release/<version>`), public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
 | `debug` | enabled | Disable for unattended package checks |
 | `session_minutes` | `60` | `15`, `30`, `60`, `120` |
 
