@@ -4,8 +4,8 @@ Run it against the commit the nightly was built from (the Revision in `FileInfo 
 the tag of the previous release, which must be fetched (a shallow fetch is enough, only trees
 are compared):
 
-    git -C OpenMS fetch --depth 1 origin tag release/3.5.0
-    python scripts/release-docs-audit.py --openms OpenMS --base release/3.5.0 --report reports/docs-audit.json
+    git -C OpenMS fetch --depth 1 origin tag v3.6.0      # release/<version> before 3.6.0
+    python scripts/release-docs-audit.py --openms OpenMS --base v3.6.0 --report reports/docs-audit.json
 
 Checks, named as in RELEASE-READINESS.md:
 
@@ -299,7 +299,7 @@ def check_versions(repo, expected):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--openms", required=True, help="OpenMS source checkout (the nightly's commit)")
-    parser.add_argument("--base", help="previous release tag, e.g. release/3.5.0 (must be fetched)")
+    parser.add_argument("--base", help="previous release tag, e.g. v3.6.0 or, before 3.6.0, release/3.5.0 (must be fetched)")
     parser.add_argument("--version", help="release being prepared; default: the CMakeLists.txt version")
     parser.add_argument("--report", default="reports/docs-audit.json")
     args = parser.parse_args()

@@ -11,7 +11,7 @@
 | Wheels | `<file names>`, sha256 `<…>` |
 | Installers | `<file names>`, folder `<archive URL>` |
 | Revision(s) | wheel `<sha>`, installers `<sha>` |
-| Baseline | pyOpenMS `<previous release>`, tag `release/<previous release>` |
+| Baseline | pyOpenMS `<previous release>`, tag `v<previous release>` (`release/<previous release>` before 3.6.0) |
 | Runs | Release readiness `<run URL>`; labs `<run URLs>` |
 
 ## Blocking failures

@@ -25,7 +25,7 @@ on Windows, macOS and Linux:
 | --- | --- | --- |
 | `nightly` | newest compatible wheel on [pypi.openms.de](https://pypi.openms.de/simple/pyopenms/) | newest dated folder under [archive.openms.de nightly](https://archive.openms.de/openms/OpenMSInstaller/nightly/) |
 | `latest` | — (use a pinned requirement instead) | newest GitHub release for this platform |
-| a pinned value | a PyPI requirement, e.g. `pyopenms==<version>` | a release tag, e.g. `release/<version>` |
+| a pinned value | a PyPI requirement, e.g. `pyopenms==<version>` | a release tag, e.g. `v<version>` (`release/<version>` before 3.6.0) |
 | an HTTPS URL | that exact `.whl` | that exact `.deb`, `.pkg`, `.exe`, `.msi` or `.zip` |
 | `none` | nothing installed | nothing installed |
 
@@ -210,7 +210,7 @@ The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an
 | `python_version` | `3.12` | `3.11`, `3.12`, `3.13` (the selected wheel must support it) |
 | `pyopenms_spec` | `nightly` | `nightly`, `pyopenms==<version>`, direct HTTPS `.whl` URL, `none` to skip |
 | `extra_packages` | blank | `numpy==2.2.6;pandas` (semicolon separates requirements) |
-| `openms_package` | `nightly` | `nightly`, `latest`, `release/<version>`, public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
+| `openms_package` | `nightly` | `nightly`, `latest`, a release tag (`v<version>`, before 3.6.0 `release/<version>`), public HTTPS `.exe`/`.msi`/`.zip` URL, `none` to skip |
 | `debug` | enabled | Disable for unattended package checks |
 | `session_minutes` | `60` | `15`, `30`, `60`, `120` |
 
