@@ -128,8 +128,9 @@ Desktop package checks:
   `Revision:`) run against the installed binaries: all of them, replayed from the upstream CMake
   files with the package's own build options, including every example pipeline the package
   ships (`scripts/installed-topp-tests.py`);
-- the versions of bundled OpenSSL, zlib, curl, SQLite and Qt are recorded, and an OpenSSL copy
-  affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`);
+- the versions of bundled OpenSSL, zlib, curl, SQLite, bzip2 and Qt are recorded, both as files
+  of their own and linked statically into another binary (libOpenMS, a search engine), and an
+  OpenSSL copy affected by a High or Critical advisory fails the run (`scripts/bundled-libs.py`);
 - `FileConverter` converts the upstream Thermo test file `ginkgotoxin-ms-switching.raw` with its
   default reader and with each reader explicitly, and the run fails unless the default reader
   writes spectra and the in-process one writes as many. On Windows this uses the PATH a new login
@@ -163,7 +164,7 @@ a package is self-contained.
 
 The 3.5.0 audit combined the runs above with static analysis of every published artifact. These are
 not yet wired into a workflow, so run them by hand against the candidate artifacts (they are checks
-F1–F9 in [RELEASE-READINESS.md](RELEASE-READINESS.md); bundled OpenSSL is now automated, see above).
+F1–F10 in [RELEASE-READINESS.md](RELEASE-READINESS.md); bundled OpenSSL is now automated, see above).
 Each one caught at least one finding that no lab run surfaced:
 
 | Check | Tool | Catches |
@@ -174,6 +175,7 @@ Each one caught at least one finding that no lab run surfaced:
 | Wheel platform tags match the intended floor | filename inspection across releases | a silently raised macOS or glibc requirement |
 | Mach-O `LC_BUILD_VERSION` minimum OS per object | `macholib` | deployment-target drift behind a correct-looking tag |
 | `manylinux` policy compliance | `auditwheel show` | unbundled non-whitelisted libraries |
+| Shared libraries grafted into the Linux and Windows wheels | `unzip -l <wheel> 'pyopenms.libs/*'` | a dependency that became shared again and loads next to pyarrow's copy |
 | Maximum `GLIBC_` symbol vs the declared `libc6` dependency | `readelf -V` over every ELF | a DEB that installs and then cannot start |
 | DEB file list vs distribution-owned paths | `dpkg-deb -c`, `dpkg -S` | unpack conflicts such as `/usr/include/sqlite3.h` |
 | DEB `md5sums` diffed between same-version assets | `dpkg-deb --ctrl-tarfile` | two different builds published under one version |

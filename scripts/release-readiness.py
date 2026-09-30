@@ -214,15 +214,21 @@ def summary():
             f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}")
         row("A3 version strings agree", not audit["VERSION-STRINGS"]["mismatched"],
             f"expected {audit['VERSION-STRINGS']['expected']}; mismatched {audit['VERSION-STRINGS']['mismatched']}")
+    def library_list(report):
+        # A static copy is listed even without a version (a static curl has none); a shared libssl
+        # without one is left out, because libcrypto next to it carries the version.
+        return ", ".join(f"{l['library']} {l['version'] or '?'}" + (" static" if l.get("linkage") == "static" else "")
+                         for l in report["libraries"] if l["version"] or l.get("linkage") == "static")
+
     libs = load("bundled-libs.json")
     row("F6 no known-vulnerable bundled OpenSSL (desktop package)", None if libs is None else not libs["blocking"],
         "no report" if libs is None else "; ".join(f"{b['file']} OpenSSL {b['version']}: " +
                                                   ", ".join(a["cve"] for a in b["advisories"]) for b in libs["blocking"]) or
-        ", ".join(f"{l['library']} {l['version']}" for l in libs["libraries"] if l["version"]))
+        library_list(libs))
     wheel_libs = load("bundled-libs-wheel.json")
     if wheel_libs is not None:
         row("F6 no known-vulnerable bundled OpenSSL (wheel)", not wheel_libs["blocking"],
-            ", ".join(f"{l['library']} {l['version']}" for l in wheel_libs["libraries"] if l["version"]))
+            library_list(wheel_libs))
     revisions = {k: v for k, v in (("wheel", data.get("wheel_revision")), ("desktop", read_desktop_revision())) if v}
     row("A2 artifacts come from one revision", None if len(revisions) < 2 else len(set(revisions.values())) == 1,
         f"{revisions}")

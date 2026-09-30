@@ -77,6 +77,7 @@ evidence.
 - [ ] F7 Installers are signed —
 - [ ] F8 Third-party licenses ship with what they cover —
 - [ ] F9 The DEB does not collide with the distribution —
+- [ ] F10 The Linux and Windows wheels bundle no third-party shared library —
 
 ### G. Release mechanics (release candidate only)
 - [ ] G1 The RC builds and uploads —
