@@ -138,6 +138,8 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
   - `DISABLE_OPENSWATH`, `WITH_WNETALIGN` and `WITH_GUI`: whether OpenSwathWorkflow,
     FeatureLinkerWNet and ImageCreator are registered.
   - `WITH_OPENTIMS`: whether `d` is among FileConverter's input formats.
+  - `WITH_THERMO_RAW`: whether FileConverter's INI allows `inprocess` for
+    `RawToMzML:reader`; only the in-process Thermo reader needs the build option.
   - `ENABLE_TDL`: whether `FileInfo -write_cwl` works.
   - `HAVE_ZLIB_NG`: whether the zlib the tools load is zlib-ng.
   - The platform variables come from the runner. `-D NAME=VALUE` overrides any of these.
@@ -156,9 +158,12 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 - **Not covered:**
   - Tests whose `if()` is false for the package are reported as not registered, with the
     condition and the values it read. On the 3.6 nightly these are: Bruker DDA data
-    (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), a Mascot server, a licensed
-    MSFragger, Novor, the SpectraST tests that upstream disables (`AND FALSE`), and the CWL
-    round trip without TDL.
+    (`-D OPENTIMS_DDA_TEST_DATA=<dir.d>` enables them), Thermo data, which upstream fetches
+    only with `ENABLE_THERMO_RAW_TESTS` (`-D THERMO_RAW_TEST_DATA=<file.raw>` enables them),
+    DIAuditor's DIA data (`-D OPENTIMS_DIA_TEST_DATA=<dir.d>` and
+    `-D THERMO_FAIMS_DIA_TEST_DATA=<file.raw>`), a
+    Mascot server, a licensed MSFragger, Novor, the SpectraST tests that upstream disables
+    (`AND FALSE`), and the CWL round trip without TDL.
   - Class tests are compiled test programs that exist only in a build tree, so they are not
     replayed.
 - **Cost:** the whole installed-checks step, including C1, C2, the Thermo part of C5 and F6, takes 4 to 7 minutes on
@@ -219,7 +224,7 @@ the candidate files.
 | F4 | Stubs are valid Python | `compile()` every `.pyi` under `-W error`; runtime namespace vs stubs | No errors; no undeclared public names | Advisory |
 | F5 | `manylinux` compliance | `auditwheel show` | Consistent with the tag | Blocking |
 | F6 | No known-vulnerable bundled library | `scripts/bundled-libs.py <installation or unpacked wheel>` → `reports/bundled-libs.json`: versions of bundled OpenSSL, zlib, curl, SQLite and Qt; OpenSSL is judged against the advisories on openssl-library.org, the others are checked by hand against their projects' advisories | No bundled library with an unfixed High or Critical CVE | Blocking |
-| F7 | Installers are signed | `signtool verify /pa` on the `.exe`; `pkgutil --check-signature` and `spctl -a -vv -t install` on the `.pkg` | Valid signature, notarized `.pkg` | Blocking |
+| F7 | Installers are signed | `pkgutil --check-signature` and `spctl -a -vv -t install` on the `.pkg`. A maintainer signs the Windows `.exe` by hand before the release is published (maintainer decision, 2026-09-27), so the `.exe` of a nightly or RC is unsigned by design; G10 checks it on the release | Valid signature, notarized `.pkg` | Blocking |
 | F8 | Third-party licenses ship with what they cover | List bundled third-party components (installer `THIRDPARTY/`, managed Thermo assemblies, vendored libraries) against `share/OpenMS/LICENSES/` | Each component that requires its license to accompany it has its license file | Blocking |
 | F9 | The DEB does not collide with the distribution | `dpkg-deb -c` against `dpkg -S` ownership on the target distribution; vendored libraries in a private directory | No path owned by a distribution package; no system library copied into `/usr/lib` | Advisory |
 
@@ -239,6 +244,7 @@ then check:
 | G7 | Conda packages build and install | The bioconda recipe PR for `<version>`; then `conda create -n t --strict-channel-priority -c conda-forge -c bioconda python=3.12 openms pyopenms` and `OpenMSInfo`, `python -c "import pyopenms"` | Recipe CI green; environment works | Blocking for the conda channel |
 | G8 | Documentation and links point at the release | readthedocs builds for the tag; `README.md`, installation pages and `release-announcement.txt` link to the current download server | Builds exist; links resolve to this version | Blocking |
 | G9 | Container images exist for the tag | `containerdeploy.yml` run | Images published | Advisory |
+| G10 | The published Windows installer is signed | After the maintainer has signed the `.exe` by hand: `signtool verify /pa /v` or `osslsigncode verify` on the copies in `archive.openms.de/openms/OpenMSInstaller/release/<version>/` and in the GitHub release. `release.yml` uploads the unsigned `.exe` to both places, and marks it latest, as soon as the tag build finishes; replace both copies before the website update is merged or the release is announced | Valid Authenticode signature with a timestamp; both copies identical | Blocking, for the release |
 
 ### H. Human checks
 
@@ -252,11 +258,12 @@ then check:
 ## Supported platforms (3.6)
 
 Checks B, C6 and F1 compare the artifacts with what the release claims. The claims live in the
-CHANGELOG (*Dependencies*) and `doc/openms/docs/about/installation/`. As of 2026-09-27 they are:
+CHANGELOG (*Dependencies*) and `doc/openms/docs/about/installation/`. As of 2026-09-28 they are:
 - no macOS Intel builds;
-- macOS 15 or newer (CHANGELOG, since OpenMS/OpenMS#10285). This matches the wheels'
-  `macosx_15_0` tag (`src/pyOpenMS/pyproject.toml` sets `MACOSX_DEPLOYMENT_TARGET = "15.0"`),
-  but the `.pkg` does not enforce it until OpenMS/OpenMS#10286;
+- macOS 15 or newer: the CHANGELOG since OpenMS/OpenMS#10285, `installation-on-macos.md` since
+  OpenMS/OpenMS#10293. This matches the wheels' `macosx_15_0` tag (`src/pyOpenMS/pyproject.toml`
+  sets `MACOSX_DEPLOYMENT_TARGET = "15.0"`), and since OpenMS/OpenMS#10286 the `.pkg` refuses
+  older versions (first in the 2026-09-28 nightly);
 - Python 3.11 or newer;
 - DEB for glibc 2.38 or newer (`installation-on-gnu-linux.md`, since OpenMS/OpenMS#10277).
 

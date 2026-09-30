@@ -759,6 +759,22 @@ def qt_platform(bin_dir):
     return None, f"the package ships the Qt platform plugins {plugins} and no offscreen one, so the tools use the native platform{headless}"
 
 
+def thermo_raw_readers(bin_dir):
+    """The values FileConverter's INI allows for RawToMzML:reader. The in-process Thermo
+    reader, 'inprocess', is compiled in only WITH_THERMO_RAW; the option is advanced, so
+    --help does not list it."""
+    with tempfile.TemporaryDirectory() as folder:
+        ini = Path(folder) / "FileConverter.ini"
+        probe(bin_dir / f"FileConverter{EXE}", "-write_ini", ini)
+        try:
+            text = ini.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return []
+    item = re.search(r'<NODE name="RawToMzML"(?:(?!</NODE>).)*?<ITEM name="reader"[^>]*?restrictions="([^"]*)"',
+                     text, re.S)
+    return item.group(1).split(",") if item else []
+
+
 def package_configuration(bin_dir, share):
     """The variables the TOPP test files take from the build (TOPP_TOOLS, build options,
     platform), as this package answers them, and how each answer was found."""
@@ -770,6 +786,7 @@ def package_configuration(bin_dir, share):
     with tempfile.TemporaryDirectory() as folder:  # CWL export exists only with ENABLE_TDL
         cwl = probe(bin_dir / f"FileInfo{EXE}", "-write_cwl", folder)
         writes_cwl = cwl is not None and cwl.returncode == 0 and any(p.stat().st_size for p in Path(folder).iterdir())
+    raw_readers = thermo_raw_readers(bin_dir)
     zlib_ng, zlib_evidence = loads_zlib_ng(bin_dir)
     on = lambda flag: "ON" if flag else "OFF"
     registered = lambda tool: f"{tool} is {'' if tool in tools else 'not '}registered"
@@ -782,6 +799,9 @@ def package_configuration(bin_dir, share):
         "WITH_GUI": (on("ImageCreator" in tools), registered("ImageCreator") + ", a tool built only WITH_GUI"),
         "HAS_XSERVER": ("ON", "CMake default; see qt_platform for the display the tests use"),
         "WITH_OPENTIMS": (on(has_d), f"'d' is {'' if has_d else 'not '}among FileConverter's input formats"),
+        "WITH_THERMO_RAW": (on("inprocess" in raw_readers),
+                            "FileConverter's INI allows RawToMzML:reader " + (", ".join(raw_readers) or "nothing")
+                            + ("; 'inprocess' exists only WITH_THERMO_RAW" if raw_readers else "")),
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
         "HAVE_ZLIB_NG": (on(zlib_ng), zlib_evidence),
@@ -1059,7 +1079,8 @@ def main():
     Path(args.report).write_text(json.dumps(report, indent=1), encoding="utf-8")
     shutil.rmtree(work, ignore_errors=True)
 
-    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
+    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_THERMO_RAW", "WITH_GUI", "DISABLE_OPENSWATH",
+                 "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
     print(f"  Qt platform: {qt or 'native'} ({qt_evidence})")
     for note in notes:
