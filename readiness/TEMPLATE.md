@@ -80,11 +80,11 @@ evidence.
 - [ ] F10 The Linux and Windows wheels bundle no third-party shared library —
 
 ### G. Release mechanics (release candidate only)
-- [ ] G1 The RC builds and uploads —
+- [ ] G1 The tag builds and uploads —
 - [ ] G2 Tag builds carry a clean version —
 - [ ] G3 The source tarball is right —
 - [ ] G4 Workflows triggered by the tag pass —
-- [ ] G5 The RC's own artifacts pass B and C —
+- [ ] G5 The tag build's own artifacts pass B and C —
 - [ ] G6 PyPI serves the release everywhere —
 - [ ] G7 Conda packages build and install —
 - [ ] G8 Documentation and links point at the release —
