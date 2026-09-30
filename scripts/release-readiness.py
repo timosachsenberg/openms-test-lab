@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import urllib.request
@@ -53,6 +54,35 @@ def fetch_json(url):
         return json.load(response)
 
 
+def version_key(version):
+    """Sort key for pyOpenMS versions: 3.6.0.dev20260930 < 3.6.0 < 3.6.0.1 < 3.7.0."""
+    match = re.match(r"(\d+(?:\.\d+)*)(.*)", version)
+    return tuple(int(part) for part in match.group(1).split(".")), 0 if match.group(2) else 1
+
+
+def release_tag(version):
+    """The git tag of an OpenMS release: v<version> since 3.6.0, release/<version> before."""
+    return f"v{version}" if version_key(version)[0][:2] >= (3, 6) else f"release/{version}"
+
+
+def candidate_version(spec):
+    """The version a pyopenms==X spec or a wheel URL names, or None."""
+    match = re.fullmatch(r"pyopenms==(\S+)", spec) or re.search(r"pyopenms-([^-/]+)-cp", spec)
+    return match.group(1) if match else None
+
+
+def default_baseline(version):
+    """The newest final pyOpenMS release on PyPI that is older than the candidate.
+
+    Right after a release, PyPI's newest version is the candidate itself, which would make the
+    comparison empty and name a tag that does not exist yet."""
+    releases = fetch_json("https://pypi.org/pypi/pyopenms/json")["releases"]
+    finals = [v for v, files in releases.items() if files and re.fullmatch(r"\d+(?:\.\d+)*", v)]
+    if version:
+        finals = [v for v in finals if version_key(v) < version_key(version)]
+    return max(finals, key=version_key)
+
+
 def resolve():
     import resolve_nightly
     spec = os.environ.get("LAB_PYOPENMS_SPEC", "nightly").strip() or "nightly"
@@ -60,9 +90,9 @@ def resolve():
         wheel = resolve_nightly.wheel()
         candidate = {"spec": wheel["url"], "version": wheel["version"], "sha256": wheel["sha256"]}
     else:
-        candidate = {"spec": spec}
-    baseline = os.environ.get("LAB_BASELINE", "").strip() or fetch_json("https://pypi.org/pypi/pyopenms/json")["info"]["version"]
-    state({"candidate": candidate, "baseline": baseline, "baseline_tag": f"release/{baseline}",
+        candidate = {"spec": spec, "version": candidate_version(spec)}
+    baseline = os.environ.get("LAB_BASELINE", "").strip() or default_baseline(candidate["version"])
+    state({"candidate": candidate, "baseline": baseline, "baseline_tag": release_tag(baseline),
            "openms_package": os.environ.get("LAB_OPENMS_PACKAGE", "nightly")})
     print(json.dumps(state(), indent=2))
 
