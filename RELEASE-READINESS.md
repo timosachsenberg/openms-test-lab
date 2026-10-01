@@ -81,8 +81,10 @@ session that keeps the runner busy for an hour.
 
 Changes against the 3.5 matrix in the README: run 4 (macOS Intel) is gone because 3.6 ships no
 Intel builds; run 8 no longer installs the DEB, because the 3.6 DEB requires glibc 2.38
-(Ubuntu 24.04 or Debian 13) and cannot install on 22.04. That is by design once the
-[supported platforms](#supported-platforms-36) say so; check C6 verifies that they do.
+(Ubuntu 24.04) and cannot install on 22.04. That is by design once the
+[supported platforms](#supported-platforms-36) say so; check C6 verifies that they do. The 3.6.0
+DEB's t64 package names also keep it off Debian 13 and Ubuntu 26.04, which C6 did not catch
+(OpenMS/OpenMS#10351; fixed for 3.7 by OpenMS/OpenMS#10367).
 
 ## Checks
 
