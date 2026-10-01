@@ -14,7 +14,8 @@ commands that produce the evidence. In short:
    `python3 scripts/release-readiness.py all` on a Linux machine with sudo, and read
    `reports/readiness-summary.md`.
 3. Dispatch the release matrix of the package labs with `debug=false` and read each run's
-   `reports/installed-checks.json`, `topp-tools.json` and `installed-topp-tests.json`.
+   `reports/installed-checks.json`, `topp-tools.json` and `installed-topp-tests.json`, and the
+   `upgrade.json` of macOS pkg relocation (C8).
 4. Do the static (F) and judgement checks (D5, E4).
 5. Copy [readiness/TEMPLATE.md](readiness/TEMPLATE.md) to
    `readiness/<date>-<version>-<candidate>.md`, fill in every checkbox with evidence, and end

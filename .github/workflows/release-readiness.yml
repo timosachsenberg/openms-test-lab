@@ -2,9 +2,10 @@ name: Release readiness
 run-name: Release readiness · ${{ inputs.pyopenms_spec }} · ${{ inputs.openms_package }}
 
 # The automated Linux part of RELEASE-READINESS.md in one run: the candidate's desktop
-# package (every tool, bundled engines, upstream TOPP tests against the installation) and
-# its pyOpenMS (public API against the previous release, user-guide examples, documentation
-# audit of the matching sources). Platform coverage comes from the three package labs.
+# package (every tool, bundled engines, upstream TOPP tests against the installation), what
+# its macOS package lets the Installer relocate (F11), and its pyOpenMS (public API against
+# the previous release, user-guide examples, documentation audit of the matching sources).
+# Platform coverage comes from the three package labs.
 
 on:
   workflow_dispatch:
@@ -15,6 +16,10 @@ on:
         type: string
       openms_package:
         description: nightly, a release tag, an HTTPS DEB URL, or none to skip the desktop checks
+        default: nightly
+        type: string
+      macos_package:
+        description: nightly, a release tag, an HTTPS PKG URL, or none; F11 reads its PackageInfo
         default: nightly
         type: string
       baseline:
@@ -40,6 +45,7 @@ jobs:
     env:
       LAB_PYOPENMS_SPEC: ${{ inputs.pyopenms_spec }}
       LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      LAB_MACOS_PACKAGE: ${{ inputs.macos_package }}
       LAB_BASELINE: ${{ inputs.baseline }}
       LAB_TOPP_TEST_SELECTION: ${{ inputs.topp_test_selection }}
       PYTHONUNBUFFERED: '1'
@@ -58,6 +64,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release-readiness.py desktop
+      - name: F11 · read the candidate's macOS package
+        if: ${{ !cancelled() && inputs.macos_package != 'none' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-readiness.py pkg
       - name: Install candidate and baseline pyOpenMS
         if: ${{ !cancelled() }}
         run: python3 scripts/release-readiness.py python

@@ -1,53 +1,91 @@
 name: macOS pkg relocation
-run-name: macOS pkg relocation · ${{ inputs.candidate || 'OpenMS/OpenMS#8479' }}
+run-name: macOS pkg relocation · ${{ inputs.previous || 'latest' }} → ${{ inputs.candidate || 'nightly' }}
 
-# Checks that the macOS installer puts TOPPView, TOPPAS and INIFileEditor into the folder of the
-# version it installs instead of updating the apps of an older OpenMS (OpenMS/OpenMS#8477).
-# See scripts/pkg-relocation.py. A push that changes the probe runs it with the defaults below.
+# Checks F11 and C8 of RELEASE-READINESS.md: whether the candidate's macOS package lets the
+# Installer relocate its apps, and where they land when it is installed over the previous
+# release (OpenMS/OpenMS#8477). With an OpenMS revision it also packages stub apps with that
+# revision's packaging scripts, for PRs that change them (scripts/pkg-relocation.py cpack).
+# A pull request that changes the probe runs it with the defaults, reporting without judging.
 on:
   workflow_dispatch:
     inputs:
       candidate:
-        description: OpenMS/OpenMS commit or branch whose cmake/ should stop the relocation (empty is the head of OpenMS/OpenMS#8479 below)
-        default: ''
-        type: string
-      baseline:
-        description: OpenMS/OpenMS commit or branch to compare against
-        default: develop
-        type: string
-      openms_package:
-        description: nightly or an HTTPS PKG URL, installed as the older OpenMS and repackaged as the newer one
+        description: The package under test; nightly, a release tag, or an HTTPS PKG URL
         default: nightly
         type: string
-  push:
+      previous:
+        description: The release installed first (C8); latest, a release tag, or an HTTPS PKG URL
+        default: latest
+        type: string
+      openms_revision:
+        description: Optional OpenMS/OpenMS commit or branch whose cmake/ packages stub apps; empty skips it
+        default: ''
+        type: string
+      baseline_revision:
+        description: The OpenMS/OpenMS revision that openms_revision is compared with
+        default: develop
+        type: string
+  pull_request:
     paths:
       - .github/workflows/macos-pkg-relocation.yml
+      - scripts/macos_pkg.py
       - scripts/pkg-relocation.py
 
 permissions:
   contents: read
 
 env:
-  # The head of OpenMS/OpenMS#8479 ("Generate ApplicationsComponent.plist for macOS PKG
-  # installer bundles") when this probe was written.
-  CANDIDATE: ${{ inputs.candidate || '533ee3e48a2ffb4e3994e0537a118bc3d9c478da' }}
-  BASELINE: ${{ inputs.baseline || 'develop' }}
-  OPENMS_PACKAGE: ${{ inputs.openms_package || 'nightly' }}
+  CANDIDATE: ${{ inputs.candidate || 'nightly' }}
+  PREVIOUS: ${{ inputs.previous || 'latest' }}
+  # On a pull request the CPack probe compares develop with the last develop before
+  # OpenMS/OpenMS#8479, which relocates all three apps.
+  OPENMS_REVISION: ${{ github.event_name == 'pull_request' && 'develop' || inputs.openms_revision }}
+  BASELINE_REVISION: ${{ github.event_name == 'pull_request' && '9fdc7a89ab89b175ff076968f932c8b6bb5f1807' || inputs.baseline_revision }}
+  JUDGE: ${{ github.event_name == 'workflow_dispatch' }}
   PYTHONUNBUFFERED: '1'
 
 jobs:
+  upgrade:
+    name: F11 and C8 · ${{ inputs.candidate || 'nightly' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: F11 · what the candidate lets the Installer relocate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/macos_pkg.py "$CANDIDATE" --report reports/macos-pkg.json \
+            $([ "$JUDGE" = true ] && echo --expect-no-relocation) > /dev/null
+      - name: C8 · install the previous release, then the candidate
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/pkg-relocation.py upgrade --previous "$PREVIOUS" --candidate "$CANDIDATE" \
+            --expect "$([ "$JUDGE" = true ] && echo in-place || echo report)"
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-relocation-upgrade-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
+
   cpack:
     name: CPack · ${{ matrix.label }}
+    if: ${{ github.event_name == 'pull_request' || inputs.openms_revision != '' }}
     runs-on: macos-15
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - label: candidate
-            expect: no-relocation
-          - label: baseline
-            expect: report
+        label: [candidate, baseline]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -55,7 +93,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: OpenMS/OpenMS
-          ref: ${{ matrix.label == 'candidate' && env.CANDIDATE || env.BASELINE }}
+          ref: ${{ matrix.label == 'candidate' && env.OPENMS_REVISION || env.BASELINE_REVISION }}
           path: openms
           sparse-checkout: cmake
           persist-credentials: false
@@ -63,47 +101,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Package stub apps with OpenMS's packaging scripts
-        run: python3 scripts/pkg-relocation.py cpack --openms openms --label ${{ matrix.label }} --expect ${{ matrix.expect }}
+        run: |
+          python3 scripts/pkg-relocation.py cpack --openms openms --label ${{ matrix.label }} \
+            --expect "$([ "$JUDGE" = true ] && [ ${{ matrix.label }} = candidate ] && echo no-relocation || echo report)"
       - name: Upload reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pkg-relocation-cpack-${{ matrix.label }}-${{ github.run_id }}
-          path: reports/
-          retention-days: 14
-
-  install:
-    name: Install · ${{ matrix.mode }}
-    runs-on: macos-15
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - mode: pkgbuild-default
-            expect: report
-          - mode: component-plist
-            expect: in-place
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: OpenMS/OpenMS
-          ref: ${{ env.CANDIDATE }}
-          path: openms
-          sparse-checkout: cmake
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Install an older and a newer OpenMS and see where the apps land
-        run: python3 scripts/pkg-relocation.py install --openms openms --package "$OPENMS_PACKAGE" --mode ${{ matrix.mode }} --expect ${{ matrix.expect }}
-      - name: Upload reports
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: pkg-relocation-install-${{ matrix.mode }}-${{ github.run_id }}
           path: reports/
           retention-days: 14

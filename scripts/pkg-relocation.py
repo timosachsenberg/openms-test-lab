@@ -2,44 +2,36 @@
 
 pkgbuild marks every app bundle relocatable unless a component plist says otherwise. The
 Installer then updates a bundle with the same identifier wherever it finds one, such as in an
-older OpenMS, instead of installing it where the package says (OpenMS/OpenMS#8477). The
-BundleIsRelocatable key in an app's Info.plist has no effect; pkgbuild reads it only from the
-component plist it is given.
+older OpenMS, instead of installing it where the package says (OpenMS/OpenMS#8477, fixed by
+OpenMS/OpenMS#8479). The BundleIsRelocatable key in an app's Info.plist has no effect;
+pkgbuild reads it only from the component plist it is given.
 
-  cpack    Runs OpenMS's packaging scripts (cmake/ of an OpenMS checkout) through
-           `cpack -G productbuild`, around three stub app bundles installed the way
-           add_mac_app_bundle() installs TOPPView, TOPPAS and INIFileEditor, and reports which
-           bundles each component of the package lets the Installer relocate.
-  install  Installs an OpenMS package as the older version and makes its apps findable. Then
-           it repackages that package's own Applications component as version 9.9.9, either
-           with pkgbuild's defaults or with the component plist that
-           cmake/generate_applications_component_plist.cmake writes, installs it, and reports
-           where each app landed.
+  upgrade  Check C8 of RELEASE-READINESS.md. Installs the previous release, makes its apps
+           findable, installs the candidate over it, and reports where each of the
+           candidate's apps landed and whether the previous release's apps were touched.
+  cpack    For PRs that change OpenMS's macOS packaging. Runs the packaging scripts of an
+           OpenMS checkout (cmake/) through `cpack -G productbuild`, around three stub app
+           bundles installed the way add_mac_app_bundle() installs TOPPView, TOPPAS and
+           INIFileEditor, and reports which bundles each component lets the Installer relocate.
 
-macOS only. Reports go to reports/, everything else to downloads/pkg-relocation/.
+Packages are `nightly`, `latest`, a release tag, an HTTPS URL or a local file
+(scripts/macos_pkg.py). macOS only; reports go to reports/, downloads to downloads/pkg-relocation/.
 """
 import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
-import plistlib
 import shutil
 import subprocess
 import sys
 import time
-import urllib.parse
-import urllib.request
-import xml.etree.ElementTree as ET
 
-import resolve_nightly
+import macos_pkg
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
 WORK = ROOT / "downloads" / "pkg-relocation"
-NEW_VERSION = "9.9.9"
-NEW_FOLDER = f"Applications/OpenMS-{NEW_VERSION}"
-MARKER = "openms-relocation-probe.txt"
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
               "LaunchServices.framework/Support/lsregister")
 
@@ -59,10 +51,10 @@ set(INSTALL_BIN_DIR bin)
 set(INSTALL_LIB_DIR lib)
 set(INSTALL_PLUGIN_DIR lib/plugins)
 set(INSTALL_SHARE_DIR share/OpenMS)
-set(OPENMS_PACKAGE_VERSION @VERSION@)
-set(OPENMS_PACKAGE_VERSION_FULLSTRING @VERSION@)
+set(OPENMS_PACKAGE_VERSION 9.9.9)
+set(OPENMS_PACKAGE_VERSION_FULLSTRING 9.9.9)
 set(CPACK_PACKAGE_NAME OpenMS)
-set(CPACK_PACKAGE_VERSION @VERSION@)
+set(CPACK_PACKAGE_VERSION 9.9.9)
 set(OPENMS_LOGO_NAME openms_logo_large_transparent.png)
 set(OPENMS_LOGOSMALL_NAME openms_logo_corner_small.png)
 set(THIRDPARTY_COMPONENT_GROUP)
@@ -117,67 +109,121 @@ def run(args, log=None, check=True, cwd=ROOT, quiet=False):
     return result
 
 
-def sha(path):
+def macos_version():
+    return run(["sw_vers", "-productVersion"], quiet=True).stdout.strip()
+
+
+def listing(found):
+    return ", ".join(f"{name}: {', '.join(ids)}" for name, ids in found.items()) or "none"
+
+
+def fingerprint(bundle):
+    """A digest of an app's Info.plist and executables; None when the app is not there."""
+    bundle = Path(bundle)
+    if not bundle.is_dir():
+        return None
     digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
+    for path in [bundle / "Contents" / "Info.plist", *sorted((bundle / "Contents" / "MacOS").glob("*"))]:
+        if path.is_file():
+            digest.update(path.name.encode() + b"\0" + path.read_bytes())
     return digest.hexdigest()
 
 
-def git_revision(checkout):
-    return run(["git", "-C", checkout, "rev-parse", "HEAD"], quiet=True).stdout.strip()
+def make_findable(paths):
+    """Register the installed apps with Launch Services and Spotlight, which runner images
+    turn off, and wait up to five minutes until Spotlight finds each one by its identifier."""
+    state = {"mdutil_before": run(["mdutil", "-s", "/"], check=False).stdout.strip()}
+    for volume in ("/", "/System/Volumes/Data"):
+        run(["sudo", "mdutil", "-i", "on", volume], check=False)
+    for path in paths.values():
+        run([LSREGISTER, "-f", path], check=False)
+        run(["mdimport", path], check=False)
+
+    def lookup():
+        return {bundle_id: [line.removeprefix("/System/Volumes/Data") for line in
+                            run(["mdfind", f"kMDItemCFBundleIdentifier == '{bundle_id}'"],
+                                check=False, quiet=True).stdout.splitlines()]
+                for bundle_id in paths}
+
+    deadline = time.time() + 300
+    found = lookup()
+    while not all(path in found[b] for b, path in paths.items()) and time.time() < deadline:
+        time.sleep(10)
+        found = lookup()
+    state.update(mdutil_after=run(["mdutil", "-s", "/"], check=False).stdout.strip(), mdfind=found,
+                 all_found=all(path in found[b] for b, path in paths.items()))
+    return state
 
 
-def fetch_package(selection):
-    """Download `nightly` or an HTTPS PKG URL; return its path and provenance."""
-    nightly = None
-    if selection == "nightly":
-        nightly = resolve_nightly.desktop()
-        url = nightly["url"]
-    elif selection.startswith("https://"):
-        url = selection
-    else:
-        raise ValueError("The package is 'nightly' or an HTTPS URL of a .pkg")
-    name = Path(urllib.parse.unquote(urllib.parse.urlsplit(url).path)).name
-    if not name.endswith(".pkg"):
-        raise ValueError(f"Not a .pkg: {url}")
-    target = WORK / name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Downloading {url}", flush=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "openms-test-lab"})
-    with urllib.request.urlopen(request, timeout=600) as response, target.open("wb") as handle:
-        shutil.copyfileobj(response, handle)
-    return target, {"url": url, "file": name, "sha256": sha(target), "nightly": nightly}
+def install_log_excerpt(name):
+    """The Installer's own account of bundles it relocated, registered or touched."""
+    log = Path("/var/log/install.log")
+    if log.is_file():
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-4000:]
+        keep = [l for l in lines if "relocated to" in l or "de.openms" in l or "/Applications/OpenMS" in l]
+        (REPORTS / name).write_text("\n".join(keep) + "\n", encoding="utf-8")
+        return [l.split("PackageKit: ", 1)[-1] for l in keep if "relocated to" in l]
+    return None
 
 
-def package_info(path):
-    root = ET.parse(path).getroot()
-    return {"identifier": root.get("identifier"), "version": root.get("version"),
-            "install_location": root.get("install-location"),
-            "bundles": {b.get("id"): b.get("path") for b in root.findall("bundle")},
-            "relocate": sorted(b.get("id") for b in root.findall("relocate/bundle"))}
+def upgrade(args):
+    report = "upgrade.json"
+    shutil.rmtree(WORK / "upgrade", ignore_errors=True)
+    record = {"check": "C8", "macos": macos_version(), "status": "downloading"}
+    write(report, record)
+    packages, apps = {}, {}
+    for label, selection in (("previous", args.previous), ("candidate", args.candidate)):
+        packages[label], record[label] = macos_pkg.fetch(selection, WORK / "upgrade" / label)
+        found = macos_pkg.components(packages[label])
+        apps[label] = macos_pkg.applications(found)
+        record[label].update(selection=selection, relocatable=macos_pkg.relocatable(found), apps=apps[label])
+        write(report, record)
+    if record["previous"]["sha256"] == record["candidate"]["sha256"]:
+        raise RuntimeError("The previous release and the candidate are the same package")
+    if not apps["candidate"]:
+        raise RuntimeError(f"The candidate installs no app under /Applications: {record['candidate']['file']}")
+    shared = {b for b in apps["candidate"] if apps["candidate"][b] == apps["previous"].get(b)}
+    if shared:
+        raise RuntimeError(f"Both packages install {sorted(shared)} at the same path, so C8 cannot tell them apart")
 
+    record["status"] = "installing previous"
+    write(report, record)
+    run(["sudo", "installer", "-pkg", packages["previous"], "-target", "/"], "install-previous.log")
+    before = {b: fingerprint(path) for b, path in apps["previous"].items()}
+    record["previous"]["installed"] = {b: digest is not None for b, digest in before.items()}
+    record["findable"] = make_findable({b: p for b, p in apps["previous"].items() if before[b]})
+    record["status"] = "installing candidate"
+    write(report, record)
+    run(["sudo", "installer", "-pkg", packages["candidate"], "-target", "/", "-verboseR"], "install-candidate.log")
+    record["installer_relocations"] = install_log_excerpt("install-log-excerpt.txt")
 
-def components(package, destination):
-    """The PackageInfo of every component of a product archive, or of one component package."""
-    shutil.rmtree(destination, ignore_errors=True)
-    run(["pkgutil", "--expand", package, destination], quiet=True)
-    destination = Path(destination)
-    if (destination / "PackageInfo").is_file():
-        return {Path(package).name: package_info(destination / "PackageInfo")}
-    return {p.parent.name: package_info(p) for p in sorted(destination.glob("*.pkg/PackageInfo"))}
+    outcomes = {}
+    for bundle_id, path in apps["candidate"].items():
+        previous_path = apps["previous"].get(bundle_id)
+        landed = fingerprint(path) is not None
+        touched = bool(previous_path) and fingerprint(previous_path) != before.get(bundle_id)
+        outcome = ("in place" if landed and not touched else "relocated" if touched and not landed
+                   else "in place, and the previous app changed too" if landed else "missing")
+        outcomes[bundle_id] = {"candidate_path": path, "previous_path": previous_path, "outcome": outcome}
+    passed = all(o["outcome"] == "in place" for o in outcomes.values())
+    record.update(status="done", outcomes=outcomes, passed=passed)
+    write(report, record)
 
-
-def applications_component(found):
-    matches = [name for name, info in found.items() if info["identifier"].endswith(".Applications")]
-    if len(matches) != 1:
-        raise RuntimeError(f"Expected one Applications component; found {matches} in {list(found)}")
-    return matches[0]
-
-
-def relocatable(found):
-    return {name: info["relocate"] for name, info in found.items() if info["relocate"]}
+    lines = [f"### C8 · upgrade `{record['previous']['file']}` → `{record['candidate']['file']}`", "",
+             f"macOS {record['macos']}. Candidate sha256 `{record['candidate']['sha256']}`.", "",
+             f"- **C8 {'PASS' if passed else 'FAIL'}**: every app of the candidate in its own folder, "
+             "the previous release's apps untouched",
+             f"- relocatable in the candidate (F11): {listing(record['candidate']['relocatable'])}",
+             f"- relocatable in the previous release: {listing(record['previous']['relocatable'])}",
+             f"- Spotlight finds the previous release's apps: {'yes' if record['findable']['all_found'] else 'no'}",
+             f"- relocations in install.log: {record['installer_relocations'] or 'none'}",
+             "", "| App | Candidate path | Landed |", "| --- | --- | --- |"]
+    lines += [f"| `{b}` | `{o['candidate_path']}` | {o['outcome']} |" for b, o in outcomes.items()]
+    summary(lines)
+    if args.expect == "in-place" and not passed:
+        print("FAIL C8: an app of the candidate did not land in its own folder")
+        return 1
+    return 0
 
 
 def cpack(args):
@@ -188,11 +234,11 @@ def cpack(args):
     source.mkdir(parents=True)
     (source / "cmake").symlink_to(openms / "cmake")
     (source / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
-    (source / "CMakeLists.txt").write_text(HARNESS.replace("@VERSION@", NEW_VERSION), encoding="utf-8")
-    record = {"label": args.label, "openms_revision": git_revision(openms),
+    (source / "CMakeLists.txt").write_text(HARNESS, encoding="utf-8")
+    record = {"label": args.label,
+              "openms_revision": run(["git", "-C", openms, "rev-parse", "HEAD"], quiet=True).stdout.strip(),
               "cmake": run(["cmake", "--version"], quiet=True).stdout.splitlines()[0],
-              "macos": run(["sw_vers", "-productVersion"], quiet=True).stdout.strip(),
-              "status": "configuring"}
+              "macos": macos_version(), "status": "configuring"}
     write(f"cpack-{args.label}.json", record)
     run(["cmake", "-S", source, "-B", build, "-DCMAKE_BUILD_TYPE=Release",
          f"-DOPENMS_HOST_DIRECTORY={openms}", "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"],
@@ -214,177 +260,22 @@ def cpack(args):
         summary([f"### CPack · {args.label}", "", f"`cpack -G productbuild` failed (exit "
                  f"{result.returncode}); see `cpack-{args.label}-cpack.log`."])
         return 1
-    found = components(packages[0], work / "expanded")
-    applications = applications_component(found)
+    found = macos_pkg.components(packages[0])
     record.update(status="packaged", package=packages[0].name, components=found,
-                  relocatable=relocatable(found), applications_component=applications)
+                  relocatable=macos_pkg.relocatable(found), applications=macos_pkg.applications(found))
     write(f"cpack-{args.label}.json", record)
 
-    app_info = found[applications]
     lines = [f"### CPack · {args.label}", "",
              f"OpenMS `{record['openms_revision']}`, {record['cmake']}, macOS {record['macos']}.", "",
              f"- component plist written: {'yes' if record['component_plist'] else 'no'}",
              f"- pkgbuild called with `--component-plist`: "
              f"{'yes' if any('--component-plist' in c for c in record['pkgbuild_commands']) else 'no'}",
-             f"- bundles of `{applications}`: " + ", ".join(f"`{p}`" for p in app_info["bundles"].values()),
-             f"- relocatable in `{applications}`: " + (", ".join(app_info["relocate"]) or "none"),
-             "- relocatable in any other component: "
-             + (", ".join(f"{n}: {b}" for n, b in record["relocatable"].items() if n != applications) or "none")]
+             "- apps: " + ", ".join(f"`{p}`" for p in record["applications"].values()),
+             f"- relocatable: {listing(record['relocatable'])}"]
     summary(lines)
     if args.expect == "no-relocation" and (record["relocatable"] or not record["component_plist"]):
         print("FAIL: the package lets the Installer relocate a bundle, or no component plist was written")
         return 1
-    return 0
-
-
-def generate_plist(openms, apps, work):
-    """Write the component plist with cmake/generate_applications_component_plist.cmake."""
-    folder = work / "plist"
-    shutil.rmtree(folder, ignore_errors=True)
-    folder.mkdir(parents=True)
-    driver = folder / "driver.cmake"
-    driver.write_text(
-        f"set_property(GLOBAL APPEND PROPERTY OPENMS_APP_BUNDLES {' '.join(apps)})\n"
-        f'set(CPACK_PACKAGING_INSTALL_PREFIX "/{NEW_FOLDER}")\n'
-        f'include("{openms}/cmake/generate_applications_component_plist.cmake")\n'
-        'if(NOT APPLICATIONS_COMPONENT_PLIST)\n'
-        '  message(FATAL_ERROR "generate_applications_component_plist.cmake wrote no plist")\n'
-        'endif()\n', encoding="utf-8")
-    # In script mode CMAKE_BINARY_DIR is the working directory.
-    run(["cmake", "-P", driver], "plist-generate.log", cwd=folder)
-    return folder / "ApplicationsComponent.plist"
-
-
-def make_findable(paths):
-    """Register the installed apps with Launch Services and Spotlight, which runner images
-    turn off, and wait until Spotlight finds each one by its bundle identifier."""
-    state = {"mdutil_before": run(["mdutil", "-s", "/"], check=False).stdout.strip()}
-    for volume in ("/", "/System/Volumes/Data"):
-        run(["sudo", "mdutil", "-i", "on", volume], check=False)
-    for path in paths.values():
-        run([LSREGISTER, "-f", path], check=False)
-        run(["mdimport", path], check=False)
-    def lookup():
-        return {bundle_id: [line.removeprefix("/System/Volumes/Data") for line in
-                            run(["mdfind", f"kMDItemCFBundleIdentifier == '{bundle_id}'"],
-                                check=False, quiet=True).stdout.splitlines()]
-                for bundle_id in paths}
-    deadline = time.time() + 300
-    found = lookup()
-    while not all(path in found[b] for b, path in paths.items()) and time.time() < deadline:
-        time.sleep(10)
-        found = lookup()
-    state.update(mdutil_after=run(["mdutil", "-s", "/"], check=False).stdout.strip(), mdfind=found,
-                 all_found=all(path in found[b] for b, path in paths.items()))
-    return state
-
-
-def install(args):
-    work = WORK / f"install-{args.mode}"
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True)
-    openms = Path(args.openms).resolve()
-    report = f"install-{args.mode}.json"
-    record = {"mode": args.mode, "openms_revision": git_revision(openms),
-              "macos": run(["sw_vers", "-productVersion"], quiet=True).stdout.strip(),
-              "cmake": run(["cmake", "--version"], quiet=True).stdout.splitlines()[0],
-              "status": "downloading"}
-    write(report, record)
-
-    # 1. The older OpenMS: the package as published.
-    package, record["package"] = fetch_package(args.package)
-    older = components(package, work / "older")
-    applications = applications_component(older)
-    record["older"] = {"components": older, "relocatable": relocatable(older),
-                       "applications_component": applications}
-    apps = {bundle_id: "/" + path.removeprefix("./")
-            for bundle_id, path in older[applications]["bundles"].items()
-            if path.endswith(".app") and len(Path(path.removeprefix("./")).parts) == 3}
-    if not apps:
-        raise RuntimeError(f"No app bundles in {applications}: {older[applications]['bundles']}")
-    old_folder = str(Path(next(iter(apps.values()))).parent).lstrip("/")
-    record["status"] = "installing older"
-    write(report, record)
-    run(["sudo", "installer", "-pkg", package, "-target", "/"], "install-older.log")
-    record["older"]["installed"] = {bundle_id: Path(path).is_dir() for bundle_id, path in apps.items()}
-    record["findable"] = make_findable(apps)
-    write(report, record)
-
-    # 2. The newer OpenMS: the same Applications component, moved to OpenMS-9.9.9, its apps
-    #    marked and versioned 9.9.9, packaged the way CPack calls pkgbuild.
-    run(["pkgutil", "--expand-full", package, work / "older-full"], quiet=True)
-    root = work / "newer-root"
-    run(["ditto", work / "older-full" / applications / "Payload", root])
-    (root / old_folder).rename(root / NEW_FOLDER)
-    bundles = sorted((root / NEW_FOLDER).glob("*.app"))
-    for bundle in bundles:
-        info = bundle / "Contents" / "Info.plist"
-        for key in ("CFBundleVersion", "CFBundleShortVersionString"):
-            run(["plutil", "-replace", key, "-string", NEW_VERSION, info], quiet=True)
-        (bundle / "Contents" / "Resources").mkdir(exist_ok=True)
-        (bundle / "Contents" / "Resources" / MARKER).write_text(NEW_VERSION + "\n", encoding="utf-8")
-    run(["pkgbuild", "--analyze", "--root", root, work / "analyzed.plist"], "pkgbuild-analyze.log")
-    with (work / "analyzed.plist").open("rb") as handle:
-        analyzed = plistlib.load(handle)
-    record["pkgbuild_default_plist"] = analyzed
-    newer = work / f"OpenMS-{NEW_VERSION}-Applications.pkg"
-    command = ["pkgbuild", "--root", root, "--identifier", older[applications]["identifier"],
-               "--version", NEW_VERSION, "--install-location", "/", newer]
-    if args.mode == "component-plist":
-        plist = generate_plist(openms, [bundle.stem for bundle in bundles], work)
-        with plist.open("rb") as handle:
-            generated = plistlib.load(handle)
-        record["component_plist"] = generated
-        record["plist_paths_match_pkgbuild"] = (
-            sorted(entry["RootRelativeBundlePath"] for entry in generated)
-            == sorted(entry["RootRelativeBundlePath"] for entry in analyzed
-                      if entry["RootRelativeBundlePath"].count("/") == 2))
-        # CPack puts the option after the output path (cmCPackProductBuildGenerator)
-        command += ["--component-plist", plist]
-    run(command, "pkgbuild-newer.log")
-    record["newer"] = components(newer, work / "newer")
-    record["status"] = "installing newer"
-    write(report, record)
-
-    # 3. Where did the newer apps go?
-    run(["sudo", "installer", "-pkg", newer, "-target", "/", "-verboseR"], "install-newer.log")
-    log = Path("/var/log/install.log")
-    if log.is_file():
-        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:]
-        (REPORTS / "install-log-excerpt.txt").write_text(
-            "\n".join(l for l in lines if "reloc" in l.lower() or "de.openms" in l or "OpenMS" in l) + "\n",
-            encoding="utf-8")
-    placed = sorted(str(p) for p in Path("/Applications").glob(f"**/Contents/Resources/{MARKER}"))
-    outcomes = {}
-    for bundle_id, old_path in apps.items():
-        new_path = f"/{NEW_FOLDER}/{Path(old_path).name}"
-        at_new = (Path(new_path) / "Contents" / "Resources" / MARKER).is_file()
-        at_old = (Path(old_path) / "Contents" / "Resources" / MARKER).is_file()
-        outcome = ("in place" if at_new and not at_old else "relocated" if at_old and not at_new
-                   else "both" if at_new else "missing")
-        outcomes[bundle_id] = {"package_path": new_path, "older_path": old_path, "outcome": outcome}
-    record.update(status="done", markers_found=placed, outcomes=outcomes)
-    write(report, record)
-
-    newer_info = next(iter(record["newer"].values()))
-    lines = [f"### Install · {args.mode}", "",
-             f"Older OpenMS: `{record['package']['file']}` (sha256 `{record['package']['sha256']}`), "
-             f"OpenMS `{record['openms_revision']}`, macOS {record['macos']}.", "",
-             f"- relocatable in the older package: "
-             + (", ".join(f"{n}: {b}" for n, b in record["older"]["relocatable"].items()) or "none"),
-             f"- Spotlight finds every older app: {'yes' if record['findable']['all_found'] else 'no'}",
-             f"- relocatable in the newer Applications component: {', '.join(newer_info['relocate']) or 'none'}"]
-    if args.mode == "component-plist":
-        lines.append(f"- plist paths equal pkgbuild's own: {'yes' if record['plist_paths_match_pkgbuild'] else 'no'}")
-    lines += ["", "| App | Package path | Landed |", "|---|---|---|"]
-    lines += [f"| `{b}` | `{o['package_path']}` | {o['outcome']} |" for b, o in outcomes.items()]
-    summary(lines)
-    if args.expect == "in-place":
-        failed = (newer_info["relocate"] or not record.get("plist_paths_match_pkgbuild", True)
-                  or any(o["outcome"] != "in place" for o in outcomes.values()))
-        if failed:
-            print("FAIL: an app did not land in the folder of the version installed")
-            return 1
     return 0
 
 
@@ -393,17 +284,16 @@ def main():
         sys.exit("macOS only")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    probe = commands.add_parser("cpack", help="package stub bundles with OpenMS's packaging scripts")
+    probe = commands.add_parser("upgrade", help="C8: install the previous release, then the candidate")
+    probe.add_argument("--previous", default="latest", help="latest, a release tag, an HTTPS URL or a .pkg")
+    probe.add_argument("--candidate", default="nightly", help="nightly, a release tag, an HTTPS URL or a .pkg")
+    probe.add_argument("--expect", choices=["in-place", "report"], default="report")
+    probe = commands.add_parser("cpack", help="package stub apps with an OpenMS checkout's packaging scripts")
     probe.add_argument("--openms", required=True, help="OpenMS checkout (cmake/ is enough)")
     probe.add_argument("--label", required=True)
     probe.add_argument("--expect", choices=["no-relocation", "report"], default="report")
-    probe = commands.add_parser("install", help="install an older and a newer OpenMS and see where the apps land")
-    probe.add_argument("--openms", required=True, help="OpenMS checkout whose plist generator to use")
-    probe.add_argument("--package", default="nightly", help="nightly or an HTTPS .pkg URL")
-    probe.add_argument("--mode", choices=["pkgbuild-default", "component-plist"], required=True)
-    probe.add_argument("--expect", choices=["in-place", "report"], default="report")
     args = parser.parse_args()
-    sys.exit(cpack(args) if args.command == "cpack" else install(args))
+    sys.exit(upgrade(args) if args.command == "upgrade" else cpack(args))
 
 
 if __name__ == "__main__":
