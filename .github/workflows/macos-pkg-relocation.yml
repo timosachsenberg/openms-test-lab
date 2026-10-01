@@ -1,0 +1,62 @@
+name: macOS pkg relocation probe
+
+## Builds OpenMS-style macOS pkgs of three stand-in app bundles with the packaging files
+## (cmake/) of an OpenMS commit and checks whether the installer may relocate the bundles
+## (OpenMS/OpenMS#8461, #8479). See scripts/pkg-relocation/probe.py. Runs on pushes to the
+## branch that adds it; once on main it can be dispatched for any OpenMS commit.
+
+on:
+  push:
+    branches: [claude/adoring-bardeen-99rase]
+    paths:
+      - .github/workflows/macos-pkg-relocation.yml
+      - scripts/pkg-relocation/**
+  workflow_dispatch:
+    inputs:
+      openms_ref:
+        description: OpenMS/OpenMS commit whose cmake/ packaging files build the probe
+        default: 533ee3e48a2ffb4e3994e0537a118bc3d9c478da
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      OPENMS_REF: ${{ inputs.openms_ref || '533ee3e48a2ffb4e3994e0537a118bc3d9c478da' }}
+      ## The runner's macOS, as for the package builds (OpenMS .github/actions/build/action.yml)
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check out the OpenMS packaging files
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.OPENMS_REF }}
+          path: openms
+          persist-credentials: false
+          sparse-checkout: cmake
+      - name: Build the packages
+        run: python3 scripts/pkg-relocation/probe.py build
+      - name: Read the PackageInfo of the Applications components
+        run: python3 scripts/pkg-relocation/probe.py inspect
+      - name: Install old, control and fixed one after another
+        if: ${{ !cancelled() }}
+        run: python3 scripts/pkg-relocation/probe.py install
+      - name: Upload the packages and their PackageInfo
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-relocation-probe-${{ github.run_id }}
+          path: probe-out/
+          retention-days: 7
