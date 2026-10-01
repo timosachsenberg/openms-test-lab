@@ -8,9 +8,10 @@ one, e.g. in an older OpenMS, instead of installing into the folder of the new v
 
   package  checks a real installer: LAB_OPENMS_PACKAGE is nightly, latest, a release tag or an
            HTTPS PKG URL, resolved and downloaded like in the package labs. Fails if a component
-           lists a bundle under <relocate>. Then puts an older copy (version 0.0.1) of every app
-           of the package into another folder, lets Spotlight index it, installs the package and
-           fails if an app of the package lands anywhere but in its own folder
+           lists a bundle under <relocate>. Then installs an older copy (version 0.0.1) of every
+           app of the package into another folder, as an earlier OpenMS would be, lets Spotlight
+           index it, installs the package and fails if an app of the package lands anywhere but
+           in its own folder
 
 The other commands test the packaging files of an OpenMS commit that has no installer yet, with
 packages of three stand-in app bundles (see CMakeLists.txt here). Their versions only order the
@@ -239,16 +240,30 @@ def bundle_version(bundle):
         return plistlib.load(handle).get("CFBundleShortVersionString")
 
 
-def make_decoy(bundle, identifier):
-    """An app bundle with the identifier of an app of the package, older than any of its versions."""
-    macos = bundle / "Contents" / "MacOS"
-    macos.mkdir(parents=True, exist_ok=True)
-    with open(bundle / "Contents" / "Info.plist", "wb") as handle:
-        plistlib.dump({"CFBundleIdentifier": identifier, "CFBundleName": bundle.stem,
-                       "CFBundleExecutable": bundle.stem, "CFBundlePackageType": "APPL",
-                       "CFBundleShortVersionString": DECOY_VERSION,
-                       "CFBundleVersion": DECOY_VERSION}, handle)
-    shutil.copy("/usr/bin/true", macos / bundle.stem)
+def install_decoys(apps, component):
+    """An older OpenMS as a user has it: every app of the package with version DECOY_VERSION in
+    DECOY_FOLDER, installed by a pkg with the identifier of the package's component. Bundles
+    written to disk by hand were not indexed by Spotlight on the runner; installed ones were."""
+    root = WORK / "decoy-root"
+    shutil.rmtree(root, ignore_errors=True)
+    stub = WORK / "decoy-stub"
+    stub.with_suffix(".c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
+    run(["cc", "-o", stub, stub.with_suffix(".c")])
+    for identifier, (path, _) in apps.items():
+        bundle = root / DECOY_FOLDER.relative_to("/") / pathlib.Path(path).name
+        (bundle / "Contents" / "MacOS").mkdir(parents=True)
+        with open(bundle / "Contents" / "Info.plist", "wb") as handle:
+            plistlib.dump({"CFBundleIdentifier": identifier, "CFBundleName": bundle.stem,
+                           "CFBundleExecutable": bundle.stem, "CFBundlePackageType": "APPL",
+                           "CFBundleInfoDictionaryVersion": "6.0",
+                           "CFBundleShortVersionString": DECOY_VERSION,
+                           "CFBundleVersion": DECOY_VERSION}, handle)
+        shutil.copy(stub, bundle / "Contents" / "MacOS" / bundle.stem)
+    decoy = WORK / "decoy.pkg"
+    run(["pkgbuild", "--root", root, "--install-location", "/", "--identifier", component,
+         "--version", DECOY_VERSION, decoy])
+    return run(["sudo", "installer", "-pkg", decoy, "-target", "/"], check=False,
+               capture_output=True, text=True).returncode
 
 
 def wait_until_findable(decoys, timeout=180):
@@ -288,6 +303,7 @@ def package():
     shutil.rmtree(expanded, ignore_errors=True)
     run(["pkgutil", "--expand", pkg, expanded])
     apps = {}  # identifier: (path in the package, version)
+    components = set()  # package identifiers of the components that hold apps
     relocatable = {}  # component: identifiers
     for info in sorted(expanded.glob("*.pkg/PackageInfo")):
         root = ET.parse(info).getroot()
@@ -296,6 +312,7 @@ def package():
             ## The apps themselves, not helper apps inside another bundle or a framework
             if path.endswith(".app") and ".app/" not in path and ".framework/" not in path:
                 apps[bundle.get("id")] = (path, bundle.get("CFBundleShortVersionString"))
+                components.add(root.get("identifier"))
         relocate = root.find("relocate")
         listed = sorted(b.get("id") for b in relocate.findall("bundle")) if relocate is not None else []
         if listed:
@@ -318,8 +335,10 @@ def package():
 
     decoys = {identifier: DECOY_FOLDER / pathlib.Path(path).name
               for identifier, (path, _) in apps.items()}
-    for identifier, bundle in decoys.items():
-        make_decoy(bundle, identifier)
+    if len(components) > 1:
+        failures.append(f"the apps are spread over several components ({sorted(components)}); "
+                        "the decoys mimic one")
+    decoy_exit = install_decoys(apps, min(components)) if apps else None
     findable = wait_until_findable(decoys)
     offset = INSTALL_LOG.stat().st_size if INSTALL_LOG.exists() else 0
     result = run(["sudo", "installer", "-pkg", pkg, "-target", "/"], check=False,
@@ -327,9 +346,10 @@ def package():
     print(result.stdout, result.stderr)
     log = [line.split("PackageKit: ")[-1] for line in install_log_since(offset)
            if "relocated to" in line]
-    summary(f"An older copy ({DECOY_VERSION}) of each app was put into `{DECOY_FOLDER}`; "
-            f"Spotlight found {len(findable)} of {len(decoys)} before the installation. "
-            f"`installer` exit code: {result.returncode}.")
+    summary(f"An older copy ({DECOY_VERSION}) of each app was installed into `{DECOY_FOLDER}` by a "
+            f"pkg with the identifier `{min(components) if components else '-'}` (installer exit "
+            f"code {decoy_exit}); Spotlight found {len(findable)} of {len(decoys)} before the "
+            f"installation. `installer` exit code for the package: {result.returncode}.")
     summary()
     summary("| app | in its own folder | decoy afterwards | install.log |")
     summary("| --- | --- | --- | --- |")
@@ -346,18 +366,26 @@ def package():
         if own is None or (version and own != version):
             failures.append(f"{identifier} {version} is not in its own folder ({path})")
     summary()
-    record.update(decoys_findable=findable, installer_exit_code=result.returncode, landed=landed)
+    record.update(decoy_installer_exit_code=decoy_exit, decoys_findable=findable,
+                  installer_exit_code=result.returncode, landed=landed)
+    if decoy_exit:
+        failures.append(f"the decoy pkg did not install (exit code {decoy_exit}), so the "
+                        "installation check is void")
     if result.returncode:
         failures.append(f"installer failed with exit code {result.returncode}")
     record["failures"] = failures
     (OUT / "package.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    moved = any(entry["decoy_version"] != DECOY_VERSION for entry in landed.values())
+    if relocatable and not moved:
+        summary("- the installation did not move an app into the older copies this time; the "
+                "`<relocate>` list still lets the installer do it on a Mac that knows them")
     for failure in failures:
         summary(f"- **FAIL** {failure}")
     if failures:
         sys.exit(1)
     if len(findable) < len(decoys):
-        summary("- **PASS** no bundle is relocatable; the installation check is incomplete because "
-                "Spotlight did not find every decoy")
+        summary("- **PASS** no bundle is relocatable; Spotlight did not find every older copy "
+                "before the installation, so that part only shows the installer did not move them")
     else:
         summary("- **PASS** no bundle is relocatable, and every app went into its own folder "
                 "although Spotlight knew an older copy")
