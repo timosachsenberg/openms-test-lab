@@ -1,0 +1,109 @@
+name: macOS pkg relocation
+run-name: macOS pkg relocation · ${{ inputs.candidate || 'OpenMS/OpenMS#8479' }}
+
+# Checks that the macOS installer puts TOPPView, TOPPAS and INIFileEditor into the folder of the
+# version it installs instead of updating the apps of an older OpenMS (OpenMS/OpenMS#8477).
+# See scripts/pkg-relocation.py. A push that changes the probe runs it with the defaults below.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: OpenMS/OpenMS commit or branch whose cmake/ should stop the relocation (empty is the head of OpenMS/OpenMS#8479 below)
+        default: ''
+        type: string
+      baseline:
+        description: OpenMS/OpenMS commit or branch to compare against
+        default: develop
+        type: string
+      openms_package:
+        description: nightly or an HTTPS PKG URL, installed as the older OpenMS and repackaged as the newer one
+        default: nightly
+        type: string
+  push:
+    paths:
+      - .github/workflows/macos-pkg-relocation.yml
+      - scripts/pkg-relocation.py
+
+permissions:
+  contents: read
+
+env:
+  # The head of OpenMS/OpenMS#8479 ("Generate ApplicationsComponent.plist for macOS PKG
+  # installer bundles") when this probe was written.
+  CANDIDATE: ${{ inputs.candidate || '533ee3e48a2ffb4e3994e0537a118bc3d9c478da' }}
+  BASELINE: ${{ inputs.baseline || 'develop' }}
+  OPENMS_PACKAGE: ${{ inputs.openms_package || 'nightly' }}
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  cpack:
+    name: CPack · ${{ matrix.label }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: candidate
+            expect: no-relocation
+          - label: baseline
+            expect: report
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ matrix.label == 'candidate' && env.CANDIDATE || env.BASELINE }}
+          path: openms
+          sparse-checkout: cmake
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Package stub apps with OpenMS's packaging scripts
+        run: python3 scripts/pkg-relocation.py cpack --openms openms --label ${{ matrix.label }} --expect ${{ matrix.expect }}
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-relocation-cpack-${{ matrix.label }}-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
+
+  install:
+    name: Install · ${{ matrix.mode }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: pkgbuild-default
+            expect: report
+          - mode: component-plist
+            expect: in-place
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.CANDIDATE }}
+          path: openms
+          sparse-checkout: cmake
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install an older and a newer OpenMS and see where the apps land
+        run: python3 scripts/pkg-relocation.py install --openms openms --package "$OPENMS_PACKAGE" --mode ${{ matrix.mode }} --expect ${{ matrix.expect }}
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-relocation-install-${{ matrix.mode }}-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
