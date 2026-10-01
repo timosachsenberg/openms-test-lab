@@ -195,11 +195,8 @@ def python_test():
     run([ROOT / ".venv/bin/python", ROOT / "scripts/unix-probe.py"],
         "python-smoke.log", env=clean_env())
 
-def native():
-    selection = os.environ.get("LAB_OPENMS_PACKAGE", "latest").strip()
-    if selection.lower() in {"", "none"}:
-        write("openms-package.json", {"status": "skipped"})
-        return
+def resolve_package(selection):
+    """The desktop package a lab input names: nightly, latest, a release tag or an HTTPS URL."""
     expected = None
     release_tag = None
     nightly = None
@@ -219,11 +216,21 @@ def native():
     filename = Path(urllib.parse.unquote(urllib.parse.urlsplit(url).path)).name
     if not filename.endswith(".pkg" if MAC else ".deb"):
         raise ValueError("macOS requires a PKG URL; Linux requires a DEB URL")
+    return {"url": url, "expected": expected, "release": release_tag, "nightly": nightly,
+            "file": filename}
+
+def native():
+    selection = os.environ.get("LAB_OPENMS_PACKAGE", "latest").strip()
+    if selection.lower() in {"", "none"}:
+        write("openms-package.json", {"status": "skipped"})
+        return
+    target = resolve_package(selection)
+    url, expected, filename = target["url"], target["expected"], target["file"]
     package = DOWNLOADS / filename
     digest = download(url, package, expected)
-    record = {"status": "downloaded", "url": url, "release": release_tag, "sha256": digest,
+    record = {"status": "downloaded", "url": url, "release": target["release"], "sha256": digest,
               "expected_digest": expected, "digest_verified": bool(expected), "file": filename,
-              "nightly": nightly}
+              "nightly": target["nightly"]}
     write("openms-package.json", record)
     if MAC:
         run(["sudo", "installer", "-pkg", package, "-target", "/"], "openms-install.log")

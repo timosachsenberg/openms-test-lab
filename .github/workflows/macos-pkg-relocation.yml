@@ -1,36 +1,69 @@
 name: macOS pkg relocation probe
+run-name: macOS pkg relocation · ${{ inputs.openms_package || 'stand-ins' }}
 
-## Builds OpenMS-style macOS pkgs of three stand-in app bundles with the packaging files
-## (cmake/) of an OpenMS commit and checks whether the installer may relocate the bundles
-## (OpenMS/OpenMS#8461, #8479). See scripts/pkg-relocation/probe.py. Runs on pushes to the
-## branch that adds it; once on main it can be dispatched for any OpenMS commit.
+## Checks whether an OpenMS macOS pkg lets the installer relocate the app bundles into an older
+## copy elsewhere (OpenMS/OpenMS#8461, #8479). See scripts/pkg-relocation/probe.py.
+##   package    a real installer: nightly, latest, a release tag or an HTTPS PKG URL
+##   stand-ins  pkgs of stand-in bundles built with the cmake/ files of an OpenMS commit that has
+##              no installer yet. Pull requests that change the probe run it as a self-test.
 
 on:
-  push:
-    branches: [claude/adoring-bardeen-99rase]
+  pull_request:
     paths:
       - .github/workflows/macos-pkg-relocation.yml
       - scripts/pkg-relocation/**
   workflow_dispatch:
     inputs:
-      openms_ref:
-        description: OpenMS/OpenMS commit whose cmake/ packaging files build the probe
-        default: 533ee3e48a2ffb4e3994e0537a118bc3d9c478da
+      openms_package:
+        description: Installer to check - nightly, latest, a release tag, an HTTPS PKG URL, or none
+        default: nightly
         required: true
+        type: string
+      openms_commit:
+        description: Also build stand-in pkgs with the cmake/ files of this OpenMS commit (blank skips)
+        default: ''
         type: string
 
 permissions:
   contents: read
 
 jobs:
-  probe:
+  package:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.openms_package != 'none' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check the installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/pkg-relocation/probe.py package
+      - name: Upload the report and the PackageInfo of relocatable components
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-relocation-package-${{ github.run_id }}
+          path: probe-out/
+          retention-days: 7
+
+  stand-ins:
+    if: ${{ github.event_name == 'pull_request' || inputs.openms_commit != '' }}
     runs-on: macos-15
     timeout-minutes: 30
     defaults:
       run:
         shell: bash
     env:
-      OPENMS_REF: ${{ inputs.openms_ref || '533ee3e48a2ffb4e3994e0537a118bc3d9c478da' }}
+      ## Pull requests test the probe with the commit that added the component plist (OpenMS/OpenMS#8479)
+      OPENMS_REF: ${{ inputs.openms_commit || '533ee3e48a2ffb4e3994e0537a118bc3d9c478da' }}
       ## The runner's macOS, as for the package builds (OpenMS .github/actions/build/action.yml)
       MACOSX_DEPLOYMENT_TARGET: '15.0'
       PYTHONUNBUFFERED: '1'
@@ -57,6 +90,6 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pkg-relocation-probe-${{ github.run_id }}
+          name: pkg-relocation-stand-ins-${{ github.run_id }}
           path: probe-out/
           retention-days: 7

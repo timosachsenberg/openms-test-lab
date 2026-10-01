@@ -236,6 +236,10 @@ The downloadable report contains every installed wheel/desktop PE binary, file v
 
 The wheel and installer versions can differ; source URLs, commit IDs and checksums are recorded separately. This audit does not change system DLLs or uninstall the runner's runtimes. The runtime trace covers the named imports and CLI startup; additional plugins, GUI interactions and Thermo RAW loading need separate coverage.
 
+## Check app bundle relocation in the macOS pkg
+
+[macOS pkg relocation probe](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/macos-pkg-relocation.yml) checks whether an OpenMS pkg lets the installer move an app into an older copy it finds elsewhere instead of the folder of the version being installed ([OpenMS/OpenMS#8461](https://github.com/OpenMS/OpenMS/issues/8461)). `openms_package` takes the same values as the package labs (`nightly`, `latest`, a release tag or an HTTPS PKG URL). The probe reads the `<relocate>` list in the PackageInfo of every component, which must be empty, then puts an older copy of each app of the package into `/Applications/OpenMS-relocation-decoy`, lets Spotlight index it and installs the package: every app must land in its own folder and the older copies must stay as they were. For a commit that has no installer yet, `openms_commit` builds pkgs of stand-in bundles with that commit's packaging files (`cmake/`) and compares them with a control built without the component plist. Details are in [scripts/pkg-relocation/probe.py](scripts/pkg-relocation/probe.py).
+
 ## Connect
 
 Use the **private** `windows-test-lab_ed25519` file delivered when this lab was created. It still carries the repository's former name and is unchanged and valid; rename it locally only if you also update the commands below. It is not stored in this repository or in workflow artifacts. The matching public key is in [`ssh/authorized_keys`](ssh/authorized_keys); no GitHub account SSH key registration is needed.

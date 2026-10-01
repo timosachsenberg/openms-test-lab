@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """Checks whether the OpenMS macOS pkg lets the installer relocate the app bundles.
 
-The packages hold three stand-in app bundles (de.openms.INIFileEditor, de.openms.TOPPAS,
-de.openms.TOPPView) and are built with the packaging files of an OpenMS checkout (see
-CMakeLists.txt here). pkgbuild lists the bundles that the installer may relocate under
-<relocate> in the PackageInfo of a component; the installer then updates a bundle with the same
-identifier wherever it finds one instead of installing into the folder of the new version.
+pkgbuild lists the bundles that the installer may relocate under <relocate> in the PackageInfo
+of a component; the installer then updates a bundle with the same identifier wherever it finds
+one, e.g. in an older OpenMS, instead of installing into the folder of the new version
+(OpenMS/OpenMS#8461).
+
+  package  checks a real installer: LAB_OPENMS_PACKAGE is nightly, latest, a release tag or an
+           HTTPS PKG URL, resolved and downloaded like in the package labs. Fails if a component
+           lists a bundle under <relocate>. Then puts an older copy (version 0.0.1) of every app
+           of the package into another folder, lets Spotlight index it, installs the package and
+           fails if an app of the package lands anywhere but in its own folder
+
+The other commands test the packaging files of an OpenMS commit that has no installer yet, with
+packages of three stand-in app bundles (see CMakeLists.txt here). Their versions only order the
+three packages:
 
   build    old (3.6.0) and control (3.7.0) without the component plist, as the packages before
            the fix; fixed (3.7.1) with the component plist of the OpenMS checkout
@@ -15,9 +24,11 @@ identifier wherever it finds one instead of installing into the folder of the ne
   install  installs old, control and fixed in that order and records where the bundles land.
            Fails if the bundles of fixed are not in its own folder
 
-Environment: OPENMS_SOURCE_DIR (default <workspace>/openms), PROBE_OUT (default
-<workspace>/probe-out).
+Environment: LAB_OPENMS_PACKAGE (package), OPENMS_SOURCE_DIR (default <workspace>/openms),
+PROBE_OUT (default <workspace>/probe-out).
 """
+import importlib.util
+import json
 import os
 import pathlib
 import plistlib
@@ -40,6 +51,9 @@ PROBES = [("old", "3.6.0", False), ("control", "3.7.0", False), ("fixed", "3.7.1
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/"
               "LaunchServices.framework/Support/lsregister")
 INSTALL_LOG = pathlib.Path("/var/log/install.log")
+## Older than every OpenMS, so the installer would upgrade it in place if it may relocate
+DECOY_VERSION = "0.0.1"
+DECOY_FOLDER = pathlib.Path("/Applications/OpenMS-relocation-decoy")
 
 
 def run(cmd, check=True, **kwargs):
@@ -207,8 +221,150 @@ def install():
     summary("- **PASS** fixed (with plist) installed all bundles into its own folder")
 
 
+def lab_module():
+    """scripts/unix-lab.py, which resolves and downloads the packages of the package labs."""
+    scripts = HERE.parent
+    sys.path.insert(0, str(scripts))
+    spec = importlib.util.spec_from_file_location("unix_lab", scripts / "unix-lab.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def bundle_version(bundle):
+    info = bundle / "Contents" / "Info.plist"
+    if not info.exists():
+        return None
+    with open(info, "rb") as handle:
+        return plistlib.load(handle).get("CFBundleShortVersionString")
+
+
+def make_decoy(bundle, identifier):
+    """An app bundle with the identifier of an app of the package, older than any of its versions."""
+    macos = bundle / "Contents" / "MacOS"
+    macos.mkdir(parents=True, exist_ok=True)
+    with open(bundle / "Contents" / "Info.plist", "wb") as handle:
+        plistlib.dump({"CFBundleIdentifier": identifier, "CFBundleName": bundle.stem,
+                       "CFBundleExecutable": bundle.stem, "CFBundlePackageType": "APPL",
+                       "CFBundleShortVersionString": DECOY_VERSION,
+                       "CFBundleVersion": DECOY_VERSION}, handle)
+    shutil.copy("/usr/bin/true", macos / bundle.stem)
+
+
+def wait_until_findable(decoys, timeout=180):
+    """Index the decoys as Spotlight indexes the apps a user has; returns the identifiers it finds."""
+    run(["sudo", "mdutil", "-i", "on", "/"], check=False)
+    for bundle in decoys.values():
+        run(["mdimport", bundle], check=False)
+        run([LSREGISTER, "-f", bundle], check=False)
+    missing = dict(decoys)
+    deadline = time.time() + timeout
+    while missing and time.time() < deadline:
+        time.sleep(10)
+        for identifier, bundle in list(missing.items()):
+            found = run(["mdfind", f"kMDItemCFBundleIdentifier == '{identifier}'"], check=False,
+                        capture_output=True, text=True).stdout.split("\n")
+            if str(bundle) in found:
+                del missing[identifier]
+    return sorted(set(decoys) - set(missing))
+
+
+def package():
+    selection = os.environ.get("LAB_OPENMS_PACKAGE", "nightly").strip()
+    lab = lab_module()
+    target = lab.resolve_package(selection)
+    OUT.mkdir(parents=True, exist_ok=True)
+    pkg = WORK / target["file"]
+    digest = lab.download(target["url"], pkg, target["expected"])
+    record = {"selection": selection, "url": target["url"], "file": target["file"],
+              "sha256": digest, "digest_verified": bool(target["expected"]),
+              "release": target["release"], "nightly": target["nightly"]}
+    summary(f"## {target['file']}")
+    summary()
+    summary(f"`{selection}` resolved to {target['url']}, SHA-256 `{digest}`")
+    summary()
+
+    expanded = WORK / "expanded-package"
+    shutil.rmtree(expanded, ignore_errors=True)
+    run(["pkgutil", "--expand", pkg, expanded])
+    apps = {}  # identifier: (path in the package, version)
+    relocatable = {}  # component: identifiers
+    for info in sorted(expanded.glob("*.pkg/PackageInfo")):
+        root = ET.parse(info).getroot()
+        for bundle in root.findall("bundle"):
+            path = bundle.get("path", "")
+            ## The apps themselves, not helper apps inside another bundle or a framework
+            if path.endswith(".app") and ".app/" not in path and ".framework/" not in path:
+                apps[bundle.get("id")] = (path, bundle.get("CFBundleShortVersionString"))
+        relocate = root.find("relocate")
+        listed = sorted(b.get("id") for b in relocate.findall("bundle")) if relocate is not None else []
+        if listed:
+            relocatable[info.parent.name] = listed
+            shutil.copy(info, OUT / f"{info.parent.name}-PackageInfo.xml")
+    record.update(apps={i: {"path": p, "version": v} for i, (p, v) in apps.items()},
+                  relocatable=relocatable)
+    summary("| app | path in the package | version | under `<relocate>` |")
+    summary("| --- | --- | --- | --- |")
+    listed_anywhere = {i for ids in relocatable.values() for i in ids}
+    for identifier, (path, version) in sorted(apps.items()):
+        summary(f"| {identifier} | `{path}` | {version} | "
+                f"{'**yes**' if identifier in listed_anywhere else 'no'} |")
+    summary()
+    failures = []
+    if not apps:
+        failures.append("the package holds no app bundle")
+    for component, ids in relocatable.items():
+        failures.append(f"{component} lets the installer relocate {', '.join(ids)}")
+
+    decoys = {identifier: DECOY_FOLDER / pathlib.Path(path).name
+              for identifier, (path, _) in apps.items()}
+    for identifier, bundle in decoys.items():
+        make_decoy(bundle, identifier)
+    findable = wait_until_findable(decoys)
+    offset = INSTALL_LOG.stat().st_size if INSTALL_LOG.exists() else 0
+    result = run(["sudo", "installer", "-pkg", pkg, "-target", "/"], check=False,
+                 capture_output=True, text=True)
+    print(result.stdout, result.stderr)
+    log = [line.split("PackageKit: ")[-1] for line in install_log_since(offset)
+           if "relocated to" in line]
+    summary(f"An older copy ({DECOY_VERSION}) of each app was put into `{DECOY_FOLDER}`; "
+            f"Spotlight found {len(findable)} of {len(decoys)} before the installation. "
+            f"`installer` exit code: {result.returncode}.")
+    summary()
+    summary("| app | in its own folder | decoy afterwards | install.log |")
+    summary("| --- | --- | --- | --- |")
+    landed = {}
+    for identifier, (path, version) in sorted(apps.items()):
+        own = bundle_version(pathlib.Path("/") / path.removeprefix("./"))
+        decoy = bundle_version(decoys[identifier])
+        moved = [line for line in log if pathlib.Path(path).name in line]
+        landed[identifier] = {"own_folder_version": own, "decoy_version": decoy, "log": moved}
+        summary(f"| {identifier} | {own or '**missing**'} | {decoy or 'missing'} | "
+                + ("<br>".join(f"`{line}`" for line in moved) or "-") + " |")
+        if decoy != DECOY_VERSION:
+            failures.append(f"{identifier} replaced the older copy in {DECOY_FOLDER}")
+        if own is None or (version and own != version):
+            failures.append(f"{identifier} {version} is not in its own folder ({path})")
+    summary()
+    record.update(decoys_findable=findable, installer_exit_code=result.returncode, landed=landed)
+    if result.returncode:
+        failures.append(f"installer failed with exit code {result.returncode}")
+    record["failures"] = failures
+    (OUT / "package.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    for failure in failures:
+        summary(f"- **FAIL** {failure}")
+    if failures:
+        sys.exit(1)
+    if len(findable) < len(decoys):
+        summary("- **PASS** no bundle is relocatable; the installation check is incomplete because "
+                "Spotlight did not find every decoy")
+    else:
+        summary("- **PASS** no bundle is relocatable, and every app went into its own folder "
+                "although Spotlight knew an older copy")
+
+
 if __name__ == "__main__":
-    commands = {"build": build, "inspect": inspect, "install": install}
+    commands = {"build": build, "inspect": inspect, "install": install, "package": package}
     if len(sys.argv) != 2 or sys.argv[1] not in commands:
         sys.exit(f"usage: {sys.argv[0]} {'|'.join(commands)}")
     commands[sys.argv[1]]()
