@@ -109,8 +109,9 @@ def desktop_suffix():
     return "-Debian-Linux-aarch64.deb" if ARM else "-Debian-Linux-x86_64.deb"
 
 
-def desktop():
-    suffix = desktop_suffix()
+def desktop(suffix=None):
+    """The newest nightly installer for this platform, or the one ending in `suffix`."""
+    suffix = suffix or desktop_suffix()
     folders = sorted(set(re.findall(r'href="(\d{4}\.\d{2}\.\d{2})/"', fetch(DESKTOP_INDEX))),
                      reverse=True)
     if not folders:

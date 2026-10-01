@@ -46,6 +46,7 @@ evidence.
 - [ ] C5 Vendor readers work in the installed package —
 - [ ] C6 The DEB installs where it claims to —
 - [ ] C7 Upgrades order correctly —
+- [ ] C8 A macOS upgrade installs the apps into the candidate's folder —
 
 ### D. pyOpenMS: API and user guide
 - [ ] D1 Every removed public name is announced —
@@ -78,6 +79,7 @@ evidence.
 - [ ] F8 Third-party licenses ship with what they cover —
 - [ ] F9 The DEB does not collide with the distribution —
 - [ ] F10 The Linux and Windows wheels bundle no third-party shared library —
+- [ ] F11 The macOS installer relocates no app bundle —
 
 ### G. Release mechanics (release candidate only)
 - [ ] G1 The tag builds and uploads —

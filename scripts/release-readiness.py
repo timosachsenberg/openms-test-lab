@@ -5,13 +5,14 @@ own Linux sandbox (it needs sudo/root for apt). Every phase writes JSON under re
 RELEASE-READINESS.md says how each result is judged.
 
     python3 scripts/release-readiness.py all                  # nightly wheel + nightly DEB
-    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=release/3.6.0 \\
+    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=release/3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
         python3 scripts/release-readiness.py all              # a release candidate
 
 Phases, in order (each can also be run alone):
 
   resolve   pick the candidate wheel and DEB, and the previous release as baseline
   desktop   install the DEB, start every tool, run upstream TOPP tests (installed-checks.py)
+  pkg       F11: what the candidate's macOS .pkg lets the Installer relocate (macos_pkg.py)
   python    candidate and baseline pyOpenMS in separate venvs, public API snapshot of each
   source    the OpenMS sources of the candidate's revision, plus the baseline release tag
   docs      user-guide examples on baseline and candidate, API diff, source docs audit
@@ -72,6 +73,13 @@ def desktop():
     run([sys.executable, ROOT / "scripts/unix-lab.py", "native"], env=env)
     result = run([sys.executable, ROOT / "scripts/installed-checks.py"], check=False)
     state({"desktop_exit": result.returncode})
+
+
+def pkg():
+    selection = os.environ.get("LAB_MACOS_PACKAGE", "nightly").strip() or "nightly"
+    result = run([sys.executable, ROOT / "scripts/macos_pkg.py", selection, "--report", REPORTS / "macos-pkg.json"],
+                 check=False, stdout=subprocess.DEVNULL)
+    state({"macos_package": selection, "macos_pkg_exit": result.returncode})
 
 
 def venv(name, requirement):
@@ -229,6 +237,10 @@ def summary():
     if wheel_libs is not None:
         row("F6 no known-vulnerable bundled OpenSSL (wheel)", not wheel_libs["blocking"],
             library_list(wheel_libs))
+    macos = load("macos-pkg.json")
+    row("F11 the macOS .pkg relocates no app bundle", None if macos is None else not macos["relocatable"],
+        "no report" if macos is None else f"{macos['file']}: " + ("; ".join(
+            f"{name} relocates {', '.join(ids)}" for name, ids in macos["relocatable"].items()) or "nothing relocatable"))
     revisions = {k: v for k, v in (("wheel", data.get("wheel_revision")), ("desktop", read_desktop_revision())) if v}
     row("A2 artifacts come from one revision", None if len(revisions) < 2 else len(set(revisions.values())) == 1,
         f"{revisions}")
@@ -252,15 +264,17 @@ def read_desktop_revision():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=["resolve", "desktop", "python", "source", "docs", "summary", "all"])
+    parser.add_argument("phase", choices=["resolve", "desktop", "pkg", "python", "source", "docs", "summary", "all"])
     phase = parser.parse_args().phase
     os.chdir(ROOT)
     REPORTS.mkdir(exist_ok=True)
     WORK.mkdir(parents=True, exist_ok=True)
-    phases = {"resolve": resolve, "desktop": desktop, "python": python_phase, "source": source,
+    phases = {"resolve": resolve, "desktop": desktop, "pkg": pkg, "python": python_phase, "source": source,
               "docs": docs, "summary": summary}
     for name in (list(phases) if phase == "all" else [phase]):
         if name == "desktop" and os.environ.get("LAB_OPENMS_PACKAGE", "nightly").strip().lower() in ("", "none"):
+            continue
+        if name == "pkg" and os.environ.get("LAB_MACOS_PACKAGE", "nightly").strip().lower() == "none":
             continue
         phases[name]()
 

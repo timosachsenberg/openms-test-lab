@@ -44,11 +44,12 @@ Rules that keep the verdict honest:
    [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml)
    workflow with its defaults, or on a Linux machine with sudo:
    `python3 scripts/release-readiness.py all`. Read `reports/readiness-summary.md`; it lists
-   every automated result of A2, A3, C, D, E and F6 by check ID. (GitHub offers a new
+   every automated result of A2, A3, C, D, E, F6 and F11 by check ID. (GitHub offers a new
    workflow for dispatch only once it is on the default branch; before that, run the script.)
 3. **Platform labs** (B): dispatch the release matrix below with `debug=false`. Every lab
    that installs a desktop package also runs C1–C3 (the full upstream TOPP suite) and F6 on
-   that platform.
+   that platform. Run 10, macOS pkg relocation, installs the previous release and then the
+   candidate (C8).
 4. **Static artifact checks** (F) and **judgement checks** (D5, E4): commands below.
 5. **Write the report**: copy `readiness/TEMPLATE.md` to
    `readiness/<date>-<version>-<candidate>.md`, tick every box, state the verdict and list
@@ -60,6 +61,8 @@ Dispatching and reading runs from a shell:
 gh workflow run release-readiness.yml -R timosachsenberg/openms-test-lab
 gh workflow run linux-lab.yml -R timosachsenberg/openms-test-lab \
   -f runner=ubuntu-24.04 -f python_version=3.12 -f pyopenms_spec=nightly -f openms_package=nightly -f debug=false
+gh workflow run macos-pkg-relocation.yml -R timosachsenberg/openms-test-lab \
+  -f candidate=nightly -f previous=latest
 gh run list -R timosachsenberg/openms-test-lab --workflow linux-lab.yml --limit 3
 gh run download <run-id> -R timosachsenberg/openms-test-lab --dir runs/<run-id>
 ```
@@ -72,7 +75,7 @@ session that keeps the runner busy for an hour.
 
 | # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | Covers |
 | --- | --- | --- | --- | --- | --- | --- |
-| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3 and F6 on Linux x64, D, E |
+| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3 and F6 on Linux x64, D, E, F11 |
 | 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3 and F6 on Windows |
 | 2 | Windows package lab | `windows-2025` | 3.14 | `nightly` | `none` | newest CPython, wheel only |
 | 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3 and F6 on macOS |
@@ -81,6 +84,7 @@ session that keeps the runner busy for an hour.
 | 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | aarch64 wheel and DEB, C1–C3 and F6 on ARM |
 | 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `nightly` | `none` | the wheel's `manylinux_2_34` floor on the oldest LTS |
 | 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `nightly` | `none` | newest CPython on Linux |
+| 10 | macOS pkg relocation | `macos-15` | – | – | `candidate=nightly`, `previous=latest` | C8, F11 |
 
 Changes against the 3.5 matrix in the README: run 4 (macOS Intel) is gone because 3.6 ships no
 Intel builds; run 8 no longer installs the DEB, because the 3.6 DEB requires glibc 2.38
@@ -121,6 +125,7 @@ desktop package (`scripts/installed-checks.py`), so each platform has its own re
 | C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader; `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files. The package labs run the Thermo part (`thermo` in `reports/installed-checks.json`; on Windows with the PATH the installer sets) | mzML written, spectra > 0, same spectrum count from both readers | Blocking for every reader the CHANGELOG announces |
 | C6 | The DEB installs where it claims to | Linux labs (runs 6 and 7) install it next to `libsqlite3-dev`; compare the `Depends:` line (`dpkg-deb -f <deb> Depends`) with the documented supported distributions | Installs without conflicts; the glibc floor matches the docs | Blocking |
 | C7 | Upgrades order correctly | `dpkg --compare-versions <nightly-version> lt <release-version>`; install the previous release, then the candidate | A nightly sorts below its release; the upgrade leaves no files from the old version | Advisory |
+| C8 | A macOS upgrade installs the apps into the candidate's folder | [macOS pkg relocation](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/macos-pkg-relocation.yml) (run 10) with `candidate` and `previous`, the release before it: `scripts/pkg-relocation.py upgrade` installs `previous`, registers its apps with Launch Services and Spotlight, installs the candidate over it, and records the Installer's own relocation lines from `install.log` → `reports/upgrade.json` | Every app of the candidate is in its own folder (`/Applications/OpenMS-<candidate version>/`), and the previous release's TOPPView, TOPPAS and INIFileEditor are unchanged. Not proven by a pass: which apps the Installer finds depends on the Mac's Launch Services and Spotlight state, and a runner is not a user's Mac (with relocatable apps, [one run](https://github.com/timosachsenberg/openms-test-lab/actions/runs/36905909728) relocated one app of three). F11 is the gate; this is the upgrade users do | Advisory |
 
 #### How C3 replays the upstream tests
 
@@ -210,9 +215,10 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 
 ### F. Static checks of the artifacts
 
-Each of these caught a finding in the [3.5.0 audit](PACKAGE-AUDIT-3.5.0.md) that no lab run
-surfaced. F6 is automated since (labs and Release readiness); the others are run by hand against
-the candidate files.
+F1–F10 each caught a finding in the [3.5.0 audit](PACKAGE-AUDIT-3.5.0.md) that no lab run
+surfaced; F11 comes from OpenMS/OpenMS#8477. F6 (labs and Release readiness) and F11 (Release
+readiness and macOS pkg relocation) are automated; the others are run by hand against the
+candidate files.
 
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
@@ -226,6 +232,7 @@ the candidate files.
 | F8 | Third-party licenses ship with what they cover | List bundled third-party components (installer `THIRDPARTY/`, managed Thermo assemblies, vendored libraries) against `share/OpenMS/LICENSES/` | Each component that requires its license to accompany it has its license file | Blocking |
 | F9 | The DEB does not collide with the distribution | `dpkg-deb -c` against `dpkg -S` ownership on the target distribution; vendored libraries in a private directory | No path owned by a distribution package; no system library copied into `/usr/lib` | Advisory |
 | F10 | The Linux and Windows wheels bundle no third-party shared library | `unzip -l <wheel> 'pyopenms.libs/*'` for the `manylinux` and `win_amd64` wheels (the macOS wheel takes its dependencies from Homebrew and is not covered) | Linux: only `libOpenMS`, `libOpenSwathAlgo`, `libopenms_thermo_bridge` and the GCC runtime (`libgomp`, `libgfortran`, `libquadmath`). Windows: only `OpenMS`, `OpenSwathAlgo` and the MSVC runtime (`msvcp140*`, `vcomp140`). A third-party library that became shared again (Arrow, OpenSSL, zlib, curl) is loaded next to pyarrow's copy, and F6 then has to judge it as a file of its own | Advisory |
+| F11 | The macOS installer relocates no app bundle | `scripts/macos_pkg.py <pkg> --expect-no-relocation`, on any OS: it reads the `PackageInfo` of every component straight from the archive → `reports/macos-pkg.json`. The package is `nightly`, a release tag, a URL or a file; Release readiness takes it as `macos_package` | No component lists a bundle under `<relocate>`. A relocatable app is installed over an app with the same identifier wherever the Installer finds one, such as in an older OpenMS, instead of into the candidate's folder (OpenMS/OpenMS#8477). Packages before OpenMS/OpenMS#8479, 3.6.0 included, fail. Not proven by a pass: where a given Mac puts the apps (C8) | Blocking |
 
 ### G. Release mechanics: only a tag build exercises them
 
