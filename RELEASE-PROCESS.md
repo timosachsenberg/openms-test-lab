@@ -26,7 +26,7 @@ Facts below cite OpenMS/OpenMS files as of `develop` ec49b87 (2026-09-30).
 | [5. Tag build](#5-what-the-tag-starts-and-how-to-check-it) | Installers, GitHub release, docs, wheels to the archive, containers, next-version PR; then the Windows installer signed by hand | Automatic, then **Maintainer** | G1–G5, G9, G10 |
 | [6. PyPI](#6-publish-pyopenms-to-pypi) | Dispatch the wheel workflow with `upload-to-pypi` | **Maintainer** | G6 |
 | [7. Documentation](#7-documentation) | readthedocs version, version switcher | **Maintainer** and a PR | G8, E10 |
-| [8. Conda](#8-bioconda) | Bioconda: one `openms-meta` recipe, `pyopenms` included | **Maintainer** (upstream PR) | G7 |
+| [8. Conda](#8-bioconda) | Bioconda: `openms-meta` first, then `pyopenms` | **Maintainer** (upstream PR) | G7 |
 | [9. Announce](#9-website-and-announcement) | Website PR, mailing lists | **Maintainer** | G10 |
 | [10. After the release](#10-after-the-release) | Next-version PR, nightly recipe, release report, follow-ups | PRs, agent | — |
 
@@ -201,17 +201,23 @@ Checks: **G8** and **E10** (`https://pyopenms.readthedocs.io/en/vX.Y.Z/` answers
 
 ## 8. Bioconda
 
-The conda packages come from one recipe in bioconda/bioconda-recipes, `recipes/openms-meta`,
-with the outputs `libopenms`, `openms`, `openms-thirdparty` and `pyopenms`. conda-build
-compiles OpenMS once (`build.sh`) and then builds `pyopenms` once per Python version against
-that `libopenms` (`package_pyopenms.sh`), so one PR publishes all of them. Keep `python` out
-of the recipe's top-level requirements, or the C++ build runs once per Python version.
+The conda packages are two recipes in bioconda/bioconda-recipes:
+- `recipes/openms-meta`, with the outputs `libopenms`, `openms` and `openms-thirdparty`;
+- `recipes/pyopenms`, which pins `libopenms =={{ version }}`.
 
-Up to 3.5.0, `pyopenms` was a recipe of its own that pinned `libopenms =={{ version }}`, so
-its PR could only open after the `openms-meta` packages were published.
+So `pyopenms` goes second: its PR opens after the `openms-meta` PR is merged and its packages
+are published, unless both recipes are in one PR, as for 3.6.0.
 
-Prepare the recipe in the fork OpenMS/bioconda-recipes, on a branch off a current bioconda
-`master`. For 3.6.0 this was `claude/openms-3.6.0`.
+Keep them separate. As an output of `openms-meta`, `pyopenms` is built in the same conda-build
+run as the C++ build, once per Python version, and the build time available on conda CI is not
+sufficient for that (jpfeuffer). This was tried and reverted on 2026-10-02. It may be worth
+another try once pyopenms can be built only once, against the stable ABI (abi3), in nanobind's
+split mode; that needs recipe changes, and whether Bioconda handles abi3 builds is open
+(jpfeuffer, OpenMS/OpenMS#10395).
+
+Prepare each recipe in the fork OpenMS/bioconda-recipes, on its own branch off a current
+bioconda `master`. For 3.6.0 both recipes are on `claude/openms-3.6.0`
+(bioconda/bioconda-recipes#69770); `claude/pyopenms-3.6.0` is an older draft it supersedes.
 
 **`meta.yaml`**
 - `version`.
@@ -255,17 +261,16 @@ Check **G7** once the packages are on the bioconda channel.
 
 - **Start the next cycle.** Merge the next-version PR from [step 5](#5-what-the-tag-starts-and-how-to-check-it).
   Its `(under development)` CHANGELOG heading is what the daily changelog-sync workflow edits.
-- **Bioconda nightly.** Bump `openms-meta` on the fork's `nightly` branch to the next `…dev`
-  version. `bioconda_deploy.yaml` builds it, `pyopenms` included, every night into the
-  anaconda.org channel `openms`; it stops with an error if `nightly` still has a
-  `recipes/pyopenms`. Before each build it merges `bioconda/master` into `nightly`, so once the
-  release recipe is merged upstream, that merge conflicts on the version line.
+- **Bioconda nightly.** Bump the fork's `nightly` recipes to the next `…dev` version.
+  `bioconda_deploy.yaml` builds them every night into the anaconda.org channel `openms`.
+  Before each build it merges `bioconda/master` into `nightly`, so once the release recipe is
+  merged upstream, that merge conflicts on the version line.
   - Resolve it once in the fork: merge `bioconda/master` into `nightly` and keep the `…dev`
     version and the `develop` git source.
   - Keep `GIT_TRACKING` on for dev builds: the release `build.sh` passes `GIT_TRACKING=OFF`
     with a fixed revision, which is wrong for `develop`.
-  - Keep `-DWITH_OPENTIMS=ON` for dev builds (`build.sh`): pyOpenMS on `develop` includes
-    `BrukerTimsFile.h`, which libopenms installs only with opentims. The release turns
+  - Keep `-DWITH_OPENTIMS=ON` for dev builds (`openms-meta/build.sh`): pyOpenMS on `develop`
+    includes `BrukerTimsFile.h`, which libopenms installs only with opentims. The release turns
     opentims off and patches pyOpenMS instead.
 - **Release report.** Write `readiness/<date>-X.Y.Z-release.md` from
   [readiness/TEMPLATE.md](readiness/TEMPLATE.md), with G1–G9 and H on the release's own
@@ -310,13 +315,11 @@ As of 2026-09-30:
 - G8: the container tags `3.6.0`, by `imagetools` from `v3.6.0`;
 - E10: the readthedocs project `pyopenms` (reconnect, build `v3.6.0`, make it the default);
 - the switcher entry, OpenMS/OpenMS#10363;
-- G7: bioconda/bioconda-recipes#69770 from `claude/openms-3.6.0`, with `pyopenms` as an
-  output of `openms-meta`, so no separate `pyopenms` PR follows (updated 2026-10-02);
+- G7: bioconda/bioconda-recipes#69770 from `claude/openms-3.6.0`, with `openms-meta` and
+  `pyopenms` as two recipes in one PR (updated 2026-10-02);
 - the next-version PR OpenMS/OpenMS#10349;
 - the Bioconda nightly: OpenMS/bioconda-recipes#26 brought `nightly` to the 3.6.0 recipes as
-  3.7.0dev. Moving `pyopenms` into `openms-meta` there has to land together with the matching
-  `bioconda_deploy.yaml` change in OpenMS/OpenMS; then the merge from step 10 once #69770 is in
-  (updated 2026-10-02).
+  3.7.0dev; the merge from step 10 once #69770 is in (updated 2026-10-02).
 
 ## Secrets and permissions
 
