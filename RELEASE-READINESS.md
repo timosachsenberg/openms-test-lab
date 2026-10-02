@@ -298,7 +298,7 @@ onto this procedure as follows.
 | Interactive applications (TOPPView, TOPPAS, INIFileEditor, IDEvaluator) | Changed: IDEvaluator is gone since 2.4; SwathWizard and FLASHDeconvWizard were removed in 3.6 | H1, E2 |
 | TOPPAS *Open containing folder* on macOS | Still relevant, manual | H2 |
 | Python wheels from GitHub Actions, `AASequence` smoke test | Automated: labs take a wheel run ID, the nightly index or PyPI, and run more than the wiki's snippet | B, D |
-| Conda packages (Python 3.6/3.7 commands) | Changed: two recipes in `bioconda-recipes` (`openms-meta` with `libopenms`/`openms`/`openms-thirdparty`, and `pyopenms`); conda-forge before bioconda with strict priority; Python 3.11+ | G7 |
+| Conda packages (Python 3.6/3.7 commands) | Changed: one recipe in `bioconda-recipes`, `openms-meta`, with the outputs `libopenms`/`openms`/`openms-thirdparty`/`pyopenms` (`pyopenms` was a recipe of its own up to 3.5.0); conda-forge before bioconda with strict priority; Python 3.11+ | G7 |
 | Report bugs labelled "OpenMS x.y.z RC1" | Changed: the bug form has a required version field; paste `OpenMSInfo` output and the installer file name | report |
 
 ## Adding a check
