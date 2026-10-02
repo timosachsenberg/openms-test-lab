@@ -210,7 +210,10 @@ are published.
 
 Keep them separate. As an output of `openms-meta`, `pyopenms` is built in the same conda-build
 run as the C++ build, once per Python version, and the build time available on conda CI is not
-sufficient for that (jpfeufer). This was tried and reverted on 2026-10-02.
+sufficient for that (jpfeuffer). This was tried and reverted on 2026-10-02. It may be worth
+another try once pyopenms can be built only once, against the stable ABI (abi3), in nanobind's
+split mode; that needs recipe changes, and whether Bioconda handles abi3 builds is open
+(jpfeuffer, OpenMS/OpenMS#10395).
 
 Prepare each recipe in the fork OpenMS/bioconda-recipes, on its own branch off a current
 bioconda `master`. For 3.6.0 these were `claude/openms-3.6.0` and `claude/pyopenms-3.6.0`.
