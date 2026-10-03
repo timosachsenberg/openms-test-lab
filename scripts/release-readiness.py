@@ -5,7 +5,7 @@ own Linux sandbox (it needs sudo/root for apt). Every phase writes JSON under re
 RELEASE-READINESS.md says how each result is judged.
 
     python3 scripts/release-readiness.py all                  # nightly wheel + nightly DEB
-    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=release/3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
+    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=v3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
         python3 scripts/release-readiness.py all              # a release candidate
 
 Phases, in order (each can also be run alone):
@@ -54,6 +54,12 @@ def fetch_json(url):
         return json.load(response)
 
 
+def release_tag(version):
+    """The git tag of an OpenMS release: v<version> from 3.6.0 on, release/<version> before."""
+    numbers = tuple(int(part) for part in version.split(".")[:3])
+    return f"v{version}" if numbers >= (3, 6, 0) else f"release/{version}"
+
+
 def resolve():
     import resolve_nightly
     spec = os.environ.get("LAB_PYOPENMS_SPEC", "nightly").strip() or "nightly"
@@ -63,7 +69,7 @@ def resolve():
     else:
         candidate = {"spec": spec}
     baseline = os.environ.get("LAB_BASELINE", "").strip() or fetch_json("https://pypi.org/pypi/pyopenms/json")["info"]["version"]
-    state({"candidate": candidate, "baseline": baseline, "baseline_tag": f"release/{baseline}",
+    state({"candidate": candidate, "baseline": baseline, "baseline_tag": release_tag(baseline),
            "openms_package": os.environ.get("LAB_OPENMS_PACKAGE", "nightly")})
     print(json.dumps(state(), indent=2))
 
