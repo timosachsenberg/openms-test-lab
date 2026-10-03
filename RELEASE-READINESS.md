@@ -146,6 +146,7 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
   - `DISABLE_OPENSWATH`, `WITH_WNETALIGN` and `WITH_GUI`: whether OpenSwathWorkflow,
     FeatureLinkerWNet and ImageCreator are registered.
   - `WITH_OPENTIMS`: whether `d` is among FileConverter's input formats.
+  - `WITH_THERMO_RAW`: whether FileConverter's `-RawToMzML:reader` offers `inprocess`.
   - `ENABLE_TDL`: whether `FileInfo -write_cwl` works.
   - `HAVE_ZLIB_NG`: whether the zlib the tools load is zlib-ng.
   - The platform variables come from the runner. `-D NAME=VALUE` overrides any of these.

@@ -767,6 +767,11 @@ def package_configuration(bin_dir, share):
              if line.strip() and not line.startswith("#")]
     listed = probe(bin_dir / f"FileConverter{EXE}", "--help")  # TOPP tools print their help on stderr
     formats = listed.stdout + listed.stderr if listed else ""
+    # -RawToMzML:reader offers 'inprocess' only in builds WITH_THERMO_RAW; it is an advanced
+    # parameter, so only --helphelp lists it
+    advanced = probe(bin_dir / f"FileConverter{EXE}", "--helphelp")
+    reader = re.search(r"-RawToMzML:reader\b.*", (advanced.stdout + advanced.stderr) if advanced else "")
+    has_inprocess = bool(reader and "'inprocess'" in reader.group(0))
     with tempfile.TemporaryDirectory() as folder:  # CWL export exists only with ENABLE_TDL
         cwl = probe(bin_dir / f"FileInfo{EXE}", "-write_cwl", folder)
         writes_cwl = cwl is not None and cwl.returncode == 0 and any(p.stat().st_size for p in Path(folder).iterdir())
@@ -782,6 +787,8 @@ def package_configuration(bin_dir, share):
         "WITH_GUI": (on("ImageCreator" in tools), registered("ImageCreator") + ", a tool built only WITH_GUI"),
         "HAS_XSERVER": ("ON", "CMake default; see qt_platform for the display the tests use"),
         "WITH_OPENTIMS": (on(has_d), f"'d' is {'' if has_d else 'not '}among FileConverter's input formats"),
+        "WITH_THERMO_RAW": (on(has_inprocess), f"'inprocess' is {'' if has_inprocess else 'not '}among the values "
+                            "of FileConverter's -RawToMzML:reader"),
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
         "HAVE_ZLIB_NG": (on(zlib_ng), zlib_evidence),
@@ -1059,7 +1066,8 @@ def main():
     Path(args.report).write_text(json.dumps(report, indent=1), encoding="utf-8")
     shutil.rmtree(work, ignore_errors=True)
 
-    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
+    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_THERMO_RAW", "WITH_GUI", "DISABLE_OPENSWATH",
+                 "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
     print(f"  Qt platform: {qt or 'native'} ({qt_evidence})")
     for note in notes:
