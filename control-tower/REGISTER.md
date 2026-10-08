@@ -11,6 +11,7 @@ Last digest: 2026-10-08T15:51Z (second digest; covers sessions updated since 14:
 | session_01UQCiwdbPoEkrebED8VQ2TJ | Difference between #10400 and #10403 | working (fixing 6 review findings) | step 5 choices: `annotate:self_trained_ion_priors` clash with #10378, isotope_error sign, `precursor:isotopes` removal, Sage-like deisotoping default; then merge #10400, close #10403 |
 | session_013WpJU7kvPs7wZymufRtjuZ | Review 10413 | working (rewriting the RFC issue body, as asked 15:42) | — |
 | session_01MmskqjZ8rz3sdTKoACxbqz | Nightly test lab analysis | review ready | maintainer approval on #10442 (CI green on 640c59cb); re-check 19:44Z |
+| session_01M6AHDXanQaXQA1vwts2r81 | Bug: OnDiscMSExperiment range filter drops spectrum metadata | starting (spawned 15:55Z for #29) | — |
 | session_015XZxMxzXdp9KCpUSpQL9EF | Bug: OpenSSL 3.6.4 pinned in vcpkg.json | review ready | CI on OpenMS/OpenMS#10458; check-in 16:17Z |
 | session_017T36hh5UMDeyMRwLiBVkbi | Bug: TOPP -write_cwl crashes | idle, CWL-enabled build running | fix af3ef01 committed, not pushed; then PR |
 | session_01DtWvvGGZSyZtVEvxGcPBGc | Bug: SimpleSearchEngine deisotoping deletes fragments | idle, build running | regression test pushed (claude/sse-deisotope-start-check); fix not written |
@@ -62,7 +63,7 @@ spawn? = bug waits for confirmation to get a session; spawned = bug session runn
 | 26 | File.cpp resolveOpenMSDataPath_: compiled-in prefixes probed before exe-relative path | minor | Static linking GUI (okohlbacher on #10384) | open | — |
 | 27 | TOPP_ProSE_DDA Bruker tests run in no CI workflow (ENABLE_OPENTIMS_TESTS off); floors may be stale | minor | ProSE PRs untangling | open | — |
 | 28 | Docs: Sage DOCS.md integration enum, Philosopher --tol default, ANDES TRAIN.md flags | minor (external docs) | Andes quant, ProSE PRs untangling | open | — |
-| 29 | OnDiscMSExperiment.cpp:175: with an m/z or intensity range set, the indexed path copies only the SpectrumSettings base; RT, MS level, name and all float/string/int data arrays (incl. ion mobility) are lost; chromatogram overload loses name and data arrays; tests assert only peak counts; from #10292; fix: copy the whole spectrum, use MSSpectrum::select | bug | Review 10413 | spawn? | — |
+| 29 | OnDiscMSExperiment.cpp:175: with an m/z or intensity range set, the indexed path copies only the SpectrumSettings base; RT, MS level, name and all float/string/int data arrays (incl. ion mobility) are lost; chromatogram overload loses name and data arrays; tests assert only peak counts; from #10292; fix: copy the whole spectrum, use MSSpectrum::select | bug | Review 10413 | spawned | session_01M6AHDXanQaXQA1vwts2r81 |
 | 30 | ParamCTDFile and ParamJSONFile throw std::ios::failure that TOPPBase does not catch (not a crash today: outputFileWritable_ checks first) | minor | Bug: write_cwl | open | — |
 | 31 | Percolator 3.07.1 stops with "median decoy score <= score at 1% FDR" on the ProSE_6 test data and ProSE falls back to HyperScores; the vendored in-process Percolator logs the same error but continues and rescores | minor (behaviour difference) | Prose in-process percolator | open | — |
 | 32 | bigbio/andes: `--lfq-min-cosine` is parsed and logged but never applied | bug (external: bigbio/andes) | PR #119 review | owned (reviewing PR #119) | PR #119 review |
