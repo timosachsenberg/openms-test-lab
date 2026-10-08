@@ -26,14 +26,14 @@ spawn? = bug recovered from a pre-protocol session, waits for confirmation; clos
 
 | # | Finding | Kind | Source | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
-| 1 | OpenMS vcpkg.json:60 pins OpenSSL 3.6.4, bundled in all wheels/packages; session cites a High advisory; no open PR | bug (security) | Nightly test lab analysis | spawn? | — |
+| 1 | OpenMS vcpkg.json:60 pins OpenSSL 3.6.4, bundled in all wheels/packages; session cites a High advisory; no open PR | bug (security) | Nightly test lab analysis | spawned | session_015XZxMxzXdp9KCpUSpQL9EF |
 | 2 | ConsensusXMLHandler.cpp:899 default-inserts accession_to_id_ and writes wrong PH_0 protein ref; FeatureXMLHandler may share the pattern | bug | idparquet migration | owned (asks to open issue + fix PR) | idparquet migration |
 | 3 | FragmentIndex tied-peptide sort order depends on the standard library, results differ by platform; fix 834e2ca only on closed #10407's branch | bug | ProSE speed optimizations | owned (asks reopen/new PR) | ProSE speed optimizations |
 | 4 | MRMDecoy.cpp:913/:367 shuffle decoys seeded from time(nullptr): libraries differ between runs | bug | PR #10402 review | owned (asks to open issue) | PR #10402 review |
 | 5 | IPF/UIS transition generation: ~200 transitions/precursor, ~14 GB for 8.7k precursors | bug (perf) | PR #10402 review | owned (asks to open issue) | PR #10402 review |
 | 6 | IsobaricWorkflow.cpp:337 purity tolerance declared bool (10 ppm becomes 1) | bug | Andes quant | owned, fix in OpenMS/OpenMS#10448 | Andes quant |
-| 7 | TOPP `-write_cwl` crashes instead of printing an error (3.6.0 too) | bug | Nightly test lab analysis | spawn? | — |
-| 8 | SimpleSearchEngineAlgorithm calls deisotopeAndSingleCharge with start_intensity_check=2, deleting real fragments (21% on TMTpro in ProSE) | bug | ProSE PRs untangling | spawn? | — |
+| 7 | TOPP `-write_cwl` crashes instead of printing an error (3.6.0 too) | bug | Nightly test lab analysis | spawned | session_017T36hh5UMDeyMRwLiBVkbi |
+| 8 | SimpleSearchEngineAlgorithm calls deisotopeAndSingleCharge with start_intensity_check=2, deleting real fragments (21% on TMTpro in ProSE) | bug | ProSE PRs untangling | spawned | session_01DtWvvGGZSyZtVEvxGcPBGc |
 | 9 | ToolHandler.cpp:93: OpenMS-GUI.tsv next to a full install's tool list gives "Duplicate tool name", no tool starts (read from code, not reproduced) | bug | Static linking GUI | spawn? | — |
 | 10 | FragmentIonLikelihoodModel_test.cpp:121-122 `T(quiet_NaN())` parsed as a declaration under clang; fix was in closed #10378, unclear if on develop | bug | ProSE PRs untangling | spawn? (check develop first) | — |
 | 11 | Windows installer unsigned (readiness blocker 10-03 and 10-07) | release blocker | Nightly test lab analysis | open (needs a signing certificate, not a code session) | — |
