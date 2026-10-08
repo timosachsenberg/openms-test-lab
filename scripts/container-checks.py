@@ -11,10 +11,10 @@ systems such as bigbio/quantms run OpenMS from them. This script checks one imag
                 and OpenMSInfo exit 0
   2. installed  scripts/installed-checks.py inside a throwaway container of the image: every
                 tool (C1), the engines (C2), the upstream TOPP tests (C3), bundled libraries
-                (F6), the Thermo reader (C5) and OpenMP (C9). For that the container gets git
-                (the image has python3), and share/OpenMS/THIRDPARTY/<engine> links to
-                /opt/OpenMS/thirdparty/<engine>, where the lab looks for the engines; the
-                image has them on its PATH
+                (F6), the Thermo reader (C5) and OpenMP (C9). For that the container gets git,
+                and cmake for the tests' check steps (cmake -P; the image has python3), and
+                share/OpenMS/THIRDPARTY/<engine> links to /opt/OpenMS/thirdparty/<engine>,
+                where the lab looks for the engines; the image has them on its PATH
   3. options    the build options C3 reads from the image are the installers' (--expect):
                 PeptDeep/ONNX, Bruker timsTOF and OpenSwath support
 
@@ -59,8 +59,8 @@ INSTALLED = r"""
 set -u
 export DEBIAN_FRONTEND=noninteractive
 cd /lab
-{ apt-get update && apt-get install -y --no-install-recommends git ca-certificates; } > reports/container-apt.log 2>&1 \
-  || { echo "installing git failed" >&2; exit 90; }
+{ apt-get update && apt-get install -y --no-install-recommends git ca-certificates cmake; } > reports/container-apt.log 2>&1 \
+  || { echo "installing git and cmake failed" >&2; exit 90; }
 share=/opt/OpenMS/share/OpenMS
 for engine in /opt/OpenMS/thirdparty/*/; do
   engine=${engine%/}
