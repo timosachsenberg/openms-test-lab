@@ -144,8 +144,11 @@ def check_thermo(bin_dir, env):
     default, inprocess, symlink = result["default"], result["inprocess"], result["symlink"]
     passed = default["exit"] == 0 and default["spectra"] > 0 and inprocess["spectra"] == default["spectra"]
     if "exit" in symlink:
+        # The link's name, written the way the same reader writes the real file's (with its
+        # extension in-process, without it by ThermoRawFileParser)
+        symlink["expected_source_file"] = (default["source_file"] or "").replace(raw.stem, staged.stem) or None
         symlink["status"] = ("passed" if symlink["exit"] == 0 and symlink["spectra"] == default["spectra"]
-                             and symlink["source_file"] == staged.name else "failed")
+                             and symlink["source_file"] == symlink["expected_source_file"] else "failed")
         passed = passed and symlink["status"] == "passed"
     result["status"] = "passed" if passed else "failed"
     return result

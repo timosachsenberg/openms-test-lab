@@ -987,7 +987,27 @@ def components(names, tests):
     groups = {}
     for name in names:
         groups.setdefault(find(name), []).append(name)
-    return list(groups.values())
+    return [dependency_order(group, tests) for group in groups.values()]
+
+
+def dependency_order(group, tests):
+    """File order, except that a test runs after the tests it DEPENDS on, as with ctest. A
+    dependency can be defined later than its dependent: third_party_tests.cmake is included
+    before src/tests/topp/CMakeLists.txt defines tests that its own tests depend on."""
+    members, done, ordered = set(group), set(), []
+
+    def visit(name, stack):
+        if name in done or name in stack:  # a cycle keeps file order
+            return
+        for dep in tests[name]["depends"]:
+            if dep in members:
+                visit(dep, stack | {name})
+        done.add(name)
+        ordered.append(name)
+
+    for name in group:
+        visit(name, frozenset())
+    return ordered
 
 
 def main():

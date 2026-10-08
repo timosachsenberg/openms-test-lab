@@ -142,7 +142,8 @@ Desktop package checks:
   .NET in `~/.dotnet`);
 - the default reader also converts the file through a symbolic link with a name of its own, the
   way Nextflow and Galaxy stage inputs, and the run fails unless it writes as many spectra and
-  the mzML's `sourceFile` carries the link's name (OpenMS/OpenMS#10451). Where the runner may not
+  the mzML's `sourceFile` carries the link's name, as the same reader writes the real file's
+  (OpenMS/OpenMS#10451). Where the runner may not
   create symbolic links, that part is recorded as not run;
 - `OpenMSInfo` reports `OpenMP : enabled`; a build that found no OpenMP runtime runs
   single-threaded whatever `-threads` says (OpenMS/OpenMS#10326).
