@@ -21,7 +21,7 @@ is enough:
 The files are interpreted in order, as a configure step would: set(), list(), if(), foreach(),
 macro(), include(), find_program(), configure_file() and the few other commands they use.
 What the build knew is supplied as variables: the tools in the package's registry, the build
-options its tools reveal (OpenSwath, WNetAlign, GUI, OpenTIMS, CWL export, zlib-ng) and the
+options its tools reveal (OpenSwath, WNetAlign, GUI, OpenTIMS, CWL export, zlib-ng, ONNX) and the
 platform; -D NAME=VALUE adds or overrides one, as with cmake. A test inside an if() that is
 false for this package is reported as skipped with the condition, as is a test whose command
 needs something missing (a variable, an input outside the checkout, an executable). Nothing
@@ -713,20 +713,24 @@ def probe(*command, env=None):
         return None
 
 
+def loaded_libraries(bin_dir):
+    """The shared libraries a tool loads: from the loader on macOS and Linux, and on Windows
+    every DLL next to the executables, where the loader looks first."""
+    tool = bin_dir / f"FileInfo{EXE}"
+    if sys.platform == "darwin":
+        loaded = probe(tool, "--help", env=dict(os.environ, DYLD_PRINT_LIBRARIES="1"))
+        return re.findall(r"(/\S+\.dylib)", loaded.stderr) if loaded else []
+    if WINDOWS:
+        return [str(p) for p in bin_dir.glob("*.dll")]
+    listing = probe("ldd", tool)
+    return re.findall(r"=>\s*(/\S+)", listing.stdout) if listing else []
+
+
 def loads_zlib_ng(bin_dir):
     """Whether the tools load zlib-ng, which the build records as HAVE_ZLIB_NG (its zlib.h
     defines ZLIBNG_VERSION). zlib-ng names itself in the version it reports, classic zlib
     does not, so the loaded zlib and OpenMS libraries (zlib may be linked in) are searched."""
-    tool = bin_dir / f"FileInfo{EXE}"
-    if sys.platform == "darwin":
-        loaded = probe(tool, "--help", env=dict(os.environ, DYLD_PRINT_LIBRARIES="1"))
-        libraries = re.findall(r"(/\S+\.dylib)", loaded.stderr) if loaded else []
-    elif WINDOWS:  # the loader looks next to the executable first
-        libraries = [str(p) for p in bin_dir.glob("*.dll")]
-    else:
-        listing = probe("ldd", tool)
-        libraries = re.findall(r"=>\s*(/\S+)", listing.stdout) if listing else []
-    candidates = sorted({p for p in libraries
+    candidates = sorted({p for p in loaded_libraries(bin_dir)
                          if re.match(r"(lib)?(z|zlib1?|z-ng|zlib-ng2?|OpenMS)[.-]", Path(p).name, re.I)})
     # macOS keeps its own libraries, Apple's classic zlib among them, in the dyld shared cache
     # rather than on disk, so a loaded /usr/lib/libz.1.dylib cannot be read and is not zlib-ng.
@@ -743,6 +747,32 @@ def loads_zlib_ng(bin_dir):
     cached = [p for p in candidates if p not in on_disk]
     evidence = ("zlib-ng in " + ", ".join(marked)) if marked else "no zlib-ng in " + ", ".join(on_disk)
     return bool(marked), evidence + (f"; from the dyld shared cache: {', '.join(cached)}" if cached else "")
+
+
+def carries_onnx(bin_dir, share):
+    """Whether the package was built WITH_ONNX: only such a build installs the PeptDeep models
+    (share/OpenMS/models) and links ONNX Runtime into libOpenMS. The runtime shows up as a
+    loaded libonnxruntime on Linux and macOS; a static link, as on Windows, leaves its name in
+    the OpenMS library itself; failing both, the package ships libonnxruntime in its lib
+    directory. Models and runtime both have to be there."""
+    models = sorted(p.name for p in (share / "models").glob("peptdeep_*.onnx"))
+    libraries = loaded_libraries(bin_dir)
+    runtime = next((p for p in libraries if re.match(r"(lib)?onnxruntime[.-]", Path(p).name, re.I)), None)
+    how = f"loads {runtime}" if runtime else None
+    if not runtime:
+        for path in (p for p in libraries if re.match(r"(lib)?OpenMS[.-]", Path(p).name) and Path(p).is_file()):
+            try:
+                if b"onnxruntime" in Path(path).read_bytes():
+                    how = f"linked into {path}"
+                    break
+            except OSError:
+                pass
+    if not how:  # a hardened macOS executable may not trace what it loads
+        shipped = sorted(bin_dir.parent.glob("lib/*onnxruntime*"))
+        how = f"ships {shipped[0]} next to libOpenMS" if shipped else None
+    evidence = (f"{len(models)} PeptDeep models in share/OpenMS/models ({', '.join(models) or 'none'}); "
+                f"ONNX Runtime {how or 'neither loaded nor linked into the OpenMS library'}")
+    return bool(models) and bool(how), evidence
 
 
 def qt_platform(bin_dir):
@@ -771,6 +801,7 @@ def package_configuration(bin_dir, share):
         cwl = probe(bin_dir / f"FileInfo{EXE}", "-write_cwl", folder)
         writes_cwl = cwl is not None and cwl.returncode == 0 and any(p.stat().st_size for p in Path(folder).iterdir())
     zlib_ng, zlib_evidence = loads_zlib_ng(bin_dir)
+    onnx, onnx_evidence = carries_onnx(bin_dir, share)
     on = lambda flag: "ON" if flag else "OFF"
     registered = lambda tool: f"{tool} is {'' if tool in tools else 'not '}registered"
     has_d = "'d'" in formats
@@ -785,6 +816,7 @@ def package_configuration(bin_dir, share):
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
         "HAVE_ZLIB_NG": (on(zlib_ng), zlib_evidence),
+        "WITH_ONNX": (on(onnx), onnx_evidence),
         "CMAKE_SYSTEM_NAME": ({"win32": "Windows", "darwin": "Darwin"}.get(sys.platform, "Linux"), "this machine"),
         "CMAKE_HOST_SYSTEM_PROCESSOR": (platform.machine(), "this machine"),
     }
@@ -1059,7 +1091,8 @@ def main():
     Path(args.report).write_text(json.dumps(report, indent=1), encoding="utf-8")
     shutil.rmtree(work, ignore_errors=True)
 
-    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
+    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_ONNX", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH",
+                 "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
     print(f"  Qt platform: {qt or 'native'} ({qt_evidence})")
     for note in notes:

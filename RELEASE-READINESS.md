@@ -44,12 +44,14 @@ Rules that keep the verdict honest:
    [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml)
    workflow with its defaults, or on a Linux machine with sudo:
    `python3 scripts/release-readiness.py all`. Read `reports/readiness-summary.md`; it lists
-   every automated result of A2, A3, C, D, E, F6 and F11 by check ID. (GitHub offers a new
+   every automated result of A2, A3, C (with C6 on every documented distribution and C10 for
+   the container image), D, E, F6 and F11 by check ID. (GitHub offers a new
    workflow for dispatch only once it is on the default branch; before that, run the script.)
 3. **Platform labs** (B): dispatch the release matrix below with `debug=false`. Every lab
-   that installs a desktop package also runs C1–C3 (the full upstream TOPP suite) and F6 on
-   that platform. Run 10, macOS pkg relocation, installs the previous release and then the
-   candidate (C8).
+   that installs a desktop package also runs C1–C3 (the full upstream TOPP suite), C5, C9 and
+   F6 on that platform, and a Linux lab C6 for its architecture. Run 10, macOS pkg relocation,
+   installs the previous release and then the candidate (C8). Run 11 checks the arm64
+   container image (C10).
 4. **Static artifact checks** (F) and **judgement checks** (D5, E4): commands below.
 5. **Write the report**: copy `readiness/TEMPLATE.md` to
    `readiness/<date>-<version>-<candidate>.md`, tick every box, state the verdict and list
@@ -63,6 +65,8 @@ gh workflow run linux-lab.yml -R timosachsenberg/openms-test-lab \
   -f runner=ubuntu-24.04 -f python_version=3.12 -f pyopenms_spec=nightly -f openms_package=nightly -f debug=false
 gh workflow run macos-pkg-relocation.yml -R timosachsenberg/openms-test-lab \
   -f candidate=nightly -f previous=latest
+gh workflow run container-lab.yml -R timosachsenberg/openms-test-lab \
+  -f image=ghcr.io/openms/openms-tools-thirdparty:latest -f runner=ubuntu-24.04-arm
 gh run list -R timosachsenberg/openms-test-lab --workflow linux-lab.yml --limit 3
 gh run download <run-id> -R timosachsenberg/openms-test-lab --dir runs/<run-id>
 ```
@@ -75,16 +79,17 @@ session that keeps the runner busy for an hour.
 
 | # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | Covers |
 | --- | --- | --- | --- | --- | --- | --- |
-| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3 and F6 on Linux x64, D, E, F11 |
-| 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3 and F6 on Windows |
+| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3, C5, C6, C9 and F6 on Linux x64, C10 (x64 image), D, E, F11 |
+| 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3, C5, C9 and F6 on Windows |
 | 2 | Windows package lab | `windows-2025` | 3.14 | `nightly` | `none` | newest CPython, wheel only |
-| 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3 and F6 on macOS |
+| 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3, C5, C9 and F6 on macOS |
 | 5 | macOS package lab | `macos-15` | 3.14 | `nightly` | `none` | newest CPython on Apple Silicon |
 | 6 | Linux package lab | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | x86_64 wheel and DEB |
-| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | aarch64 wheel and DEB, C1–C3 and F6 on ARM |
+| 7 | Linux package lab | `ubuntu-24.04-arm` | 3.12 | `nightly` | `nightly` | aarch64 wheel and DEB, C1–C3, C5, C6, C9 and F6 on ARM |
 | 8 | Linux package lab | `ubuntu-22.04` | 3.12 | `nightly` | `none` | the wheel's `manylinux_2_34` floor on the oldest LTS |
 | 9 | Linux package lab | `ubuntu-24.04` | 3.14 | `nightly` | `none` | newest CPython on Linux |
 | 10 | macOS pkg relocation | `macos-15` | – | – | `candidate=nightly`, `previous=latest` | C8, F11 |
+| 11 | Container lab | `ubuntu-24.04-arm` | – | – | `image=ghcr.io/openms/openms-tools-thirdparty:latest` | C10 for the arm64 image |
 
 Changes against the 3.5 matrix in the README: run 4 (macOS Intel) is gone because 3.6 ships no
 Intel builds; run 8 no longer installs the DEB, because the 3.6 DEB requires glibc 2.38
@@ -122,10 +127,12 @@ desktop package (`scripts/installed-checks.py`), so each platform has its own re
 | C2 | The bundled search engines start | same report, `thirdparty` | Every engine under `share/OpenMS/THIRDPARTY` that has a payload starts without a loader error | Blocking |
 | C3 | Upstream TOPP and TOPPAS tests pass on the installation | `scripts/installed-topp-tests.py --select all --fetch-missing` (the labs' default; see [below](#how-c3-replays-the-upstream-tests)) → `reports/installed-topp-tests.json` | No test fails. Every skipped or not-registered test is listed with its reason; one of a tool that is new in this release needs that reason in the report. `package_configuration` matches the package (a wrongly detected build option hides tests) and `replay_notes` is empty | Blocking |
 | C4 | Adapters find the bundled engines on their own | Run `CometAdapter` and `SageAdapter` without `-comet_executable` / `-sage_executable` on each platform | Exit 0 | Advisory |
-| C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader; `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files. The package labs run the Thermo part (`thermo` in `reports/installed-checks.json`; on Windows with the PATH the installer sets) | mzML written, spectra > 0, same spectrum count from both readers | Blocking for every reader the CHANGELOG announces |
-| C6 | The DEB installs where it claims to | Linux labs (runs 6 and 7) install it next to `libsqlite3-dev`; compare the `Depends:` line (`dpkg-deb -f <deb> Depends`) with the documented supported distributions | Installs without conflicts; the glibc floor matches the docs | Blocking |
+| C5 | Vendor readers work in the installed package | Thermo: install a .NET 8 runtime and run `FileConverter -in ginkgotoxin-ms-switching.raw -out x.mzML -RawToMzML:reader inprocess` (the file is in `src/tests/topp/THIRDPARTY/`), then with the default reader, then with the default reader through a symbolic link that has a name of its own, which is how Nextflow and Galaxy stage every input (OpenMS/OpenMS#10451); `FileInfo -in x.mzML`. Bruker: the same with a timsTOF `.d.zip` from `https://archive.openms.de/openms/testfiles/`. pyOpenMS: `ThermoRawFile` and `BrukerTimsFile` load the same files. The package labs run the Thermo part (`thermo` in `reports/installed-checks.json`; on Windows with the PATH the installer sets) | mzML written, spectra > 0, same spectrum count from both readers and through the link, and the mzML read through the link names the link in its `sourceFile`, so that results still match the experimental design. A runner that may not create a link records that part as not run | Blocking for every reader the CHANGELOG announces |
+| C6 | The DEB installs where it claims to | Linux labs (runs 6 and 7) install it on the runner next to `libsqlite3-dev`. Then `scripts/deb-distributions.py` (Linux labs and Release readiness) installs it with `apt-get` in a clean container of every distribution the [installation page](#supported-platforms-36) names, checks with `ldd` that every ELF file of the package resolves its libraries and that no symbolic link of it dangles, and starts `FileInfo --help`, `OpenMSInfo` and `TOPPView --help`; in containers of the distributions the page excludes, `apt-get` has to refuse it for an unmet dependency → `reports/deb-distributions.json`. The runner is the build distribution, the one place where the names `dpkg-shlibdeps` writes into `Depends:` are sure to exist; 3.6.0 did not install on Ubuntu 26.04 and Debian 13 (OpenMS/OpenMS#10351) | Installs without conflicts and starts on every named distribution, is refused on every excluded one, and the glibc floor of `Depends:` matches the docs | Blocking |
 | C7 | Upgrades order correctly | `dpkg --compare-versions <nightly-version> lt <release-version>`; install the previous release, then the candidate | A nightly sorts below its release; the upgrade leaves no files from the old version | Advisory |
 | C8 | A macOS upgrade installs the apps into the candidate's folder | [macOS pkg relocation](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/macos-pkg-relocation.yml) (run 10) with `candidate` and `previous`, the release before it: `scripts/pkg-relocation.py upgrade` installs `previous`, registers its apps with Launch Services and Spotlight, installs the candidate over it, and records the Installer's own relocation lines from `install.log` → `reports/upgrade.json` | Every app of the candidate is in its own folder (`/Applications/OpenMS-<candidate version>/`), and the previous release's TOPPView, TOPPAS and INIFileEditor are unchanged. Not proven by a pass: which apps the Installer finds depends on the Mac's Launch Services and Spotlight state, and a runner is not a user's Mac (with relocatable apps, [one run](https://github.com/timosachsenberg/openms-test-lab/actions/runs/36905909728) relocated one app of three). F11 is the gate; this is the upgrade users do | Advisory |
+| C9 | The package parallelizes with OpenMP | `installed-checks.py` runs `OpenMSInfo` → `openmp` in `reports/installed-checks.json`, on every platform. A build that finds no OpenMP runtime falls back to `-fopenmp-simd`, which compiles out every `#pragma omp parallel`: the tools then run single-threaded whatever `-threads` says, as the 3.6.0 macOS package did (OpenMS/OpenMS#10326) | `OpenMP : enabled` everywhere | Blocking |
+| C10 | The container image works like an installed package | `scripts/container-checks.py --image ghcr.io/openms/openms-tools-thirdparty:<tag>` (Release readiness for x64, Container lab, run 11, for arm64) → `reports/container-checks.json`, with the image's own C1–C3, C5, C9 and F6 reports under `reports/container/`. Three steps: the image as published (every ELF file under `/opt/OpenMS` resolves its libraries, no link dangles, `FileInfo` and `OpenMSInfo` start); `installed-checks.py` in a throwaway container of it, which gets `git` for that and finds the engines of `/opt/OpenMS/thirdparty` through links in `share/OpenMS/THIRDPARTY`; and the build options C3 reads from the image against the installers' (PeptDeep/ONNX, Bruker timsTOF, OpenSwath; `--expect`). The images come from `containerdeploy.yml`, not from the Release workflow, with Ubuntu's libraries and options of their own: until OpenMS/OpenMS#10462 they had no ONNX Runtime and no PeptDeep models. `latest` is built from `nightly`; compare its revision with A2 | All three steps pass on x64 and arm64 | Advisory |
 
 #### How C3 replays the upstream tests
 
@@ -148,6 +155,10 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
   - `WITH_OPENTIMS`: whether `d` is among FileConverter's input formats.
   - `ENABLE_TDL`: whether `FileInfo -write_cwl` works.
   - `HAVE_ZLIB_NG`: whether the zlib the tools load is zlib-ng.
+  - `WITH_ONNX`: whether the PeptDeep models are in `share/OpenMS/models` and ONNX Runtime is
+    loaded with libOpenMS or linked into it. Without it, a package built `WITH_ONNX` would
+    run the tests meant for a build without ONNX (`TOPP_OpenDIA_predicted_requires_onnx`
+    fails on such a package) and skip the PeptDeep ones.
   - The platform variables come from the runner. `-D NAME=VALUE` overrides any of these.
 - **Deviations from CI, on purpose:**
   - `DATA_DIR_SHARE` and `CF_OPENMS_DATA_PATH` are the installed `share/OpenMS`, because that
@@ -252,7 +263,7 @@ likely fails, and its packages cannot pass G2.
 | G6 | PyPI serves the release everywhere | After upload: every lab with `pyopenms_spec=pyopenms==<version>` | Every platform installs the binary wheel | Blocking, after upload |
 | G7 | Conda packages build and install | The bioconda recipe PR for `<version>`; then `conda create -n t --strict-channel-priority -c conda-forge -c bioconda python=3.12 openms pyopenms` and `OpenMSInfo`, `python -c "import pyopenms"` | Recipe CI green; environment works | Blocking for the conda channel |
 | G8 | Documentation and links point at the release | readthedocs builds for the tag; `README.md`, installation pages and `release-announcement.txt` link to the current download server | Builds exist; links resolve to this version | Blocking |
-| G9 | Container images exist for the tag | `containerdeploy.yml` run | Images published | Advisory |
+| G9 | Container images exist for the tag | `containerdeploy.yml` run; then C10 with `ghcr.io/openms/openms-tools-thirdparty:<version>` on x64 and arm64 | Images published, and C10 passes for them | Advisory |
 
 ### H. Human checks
 
@@ -260,7 +271,7 @@ likely fails, and its packages cannot pass G2.
 | --- | --- | --- | --- |
 | H1 | GUI on each platform: TOPPView opens an mzML in 1D and 2D; TOPPAS loads and runs a workflow from `share/OpenMS/examples/TOPPAS`; INIFileEditor opens and saves a tool INI; the splash screen shows the release version | All work | Human, blocking |
 | H2 | TOPPAS *Open containing folder* on macOS (a past installer-only regression) | Opens Finder | Human, advisory |
-| H3 | Clean-machine install: Windows without the VC++ redistributable or .NET; a fresh macOS user (Gatekeeper); Linux in a minimal container (`docker run ubuntu:24.04`, `apt install ./<deb>`) | Installs and starts; a missing runtime produces a clear message | Human (Linux part scriptable), blocking |
+| H3 | Clean-machine install: Windows without the VC++ redistributable or .NET; a fresh macOS user (Gatekeeper). The Linux part, a minimal container per distribution, is automated as C6 | Installs and starts; a missing runtime produces a clear message | Human, blocking |
 | H4 | The installer's license page | Current text | Human, advisory |
 
 ## Supported platforms (3.6)
@@ -273,6 +284,10 @@ CHANGELOG (*Dependencies*) and `doc/openms/docs/about/installation/`. As of 2026
   but the `.pkg` does not enforce it until OpenMS/OpenMS#10286;
 - Python 3.11 or newer;
 - DEB for glibc 2.38 or newer (`installation-on-gnu-linux.md`, since OpenMS/OpenMS#10277).
+- For 3.7: the DEB installs on Ubuntu 24.04 and 26.04 and on Debian 13, and not on Ubuntu 22.04
+  or Debian 12 (`installation-on-gnu-linux.md`, since OpenMS/OpenMS#10367; the 3.6.0 DEB
+  installs on Ubuntu 24.04 only, OpenMS/OpenMS#10351). C6 tests exactly these lists: keep
+  `INSTALLS` and `REFUSED` in `scripts/deb-distributions.py` in step with that page.
 
 Resolve disagreements between these before a release; the report flags them under F1 and C6.
 
@@ -290,7 +305,7 @@ onto this procedure as follows.
 | Tutorial data and workflows on abibuilder | Changed: data remains only on abibuilder (`archive.openms.de/openms/Tutorials/` is 404) and is still linked from the TOPPView tutorial and the pyOpenMS user guide; the shipped `share/OpenMS/examples/TOPPAS/*.toppas` use only current tools | H1, E3, G8 |
 | Documentation available and correct, version numbers | Still relevant | A3, E9, E10, G8 |
 | Splash screens show the correct version | Still relevant; the version is drawn at runtime from `VersionInfo`, so it shows whatever G2 finds | G2, H1 |
-| Clean OS installation (VM) | Still relevant; hosted runners are not clean machines | H3 |
+| Clean OS installation (VM) | Still relevant; hosted runners are not clean machines. Automated for the DEB in clean containers | C6, H3 |
 | License text in the installer (version, year) | Mostly moot: `License.txt` says "2002-present" and has no version; third-party licenses matter more | H4, F8 |
 | All installed tools can be executed | Automated | C1 |
 | Third-party executables installed and working | Automated for starting them; adapters on Linux need explicit paths | C2, C3, C4 |

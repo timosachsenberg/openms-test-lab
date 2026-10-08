@@ -14,8 +14,9 @@ commands that produce the evidence. In short:
    `python3 scripts/release-readiness.py all` on a Linux machine with sudo, and read
    `reports/readiness-summary.md`.
 3. Dispatch the release matrix of the package labs with `debug=false` and read each run's
-   `reports/installed-checks.json`, `topp-tools.json` and `installed-topp-tests.json`, and the
-   `upgrade.json` of macOS pkg relocation (C8).
+   `reports/installed-checks.json`, `topp-tools.json` and `installed-topp-tests.json`, the
+   Linux labs' `deb-distributions.json` (C6), the `upgrade.json` of macOS pkg relocation (C8)
+   and the Container lab's `container-checks.json` (C10).
 4. Do the static (F) and judgement checks (D5, E4).
 5. Copy [readiness/TEMPLATE.md](readiness/TEMPLATE.md) to
    `readiness/<date>-<version>-<candidate>.md`, fill in every checkbox with evidence, and end
@@ -50,6 +51,8 @@ python3 scripts/resolve_nightly.py wheel        # newest compatible nightly whee
 python3 scripts/resolve_nightly.py desktop      # newest nightly installer for this platform
 python3 scripts/topp-tools-smoke.py             # C1/C2 against the OpenMS on PATH
 python3 scripts/installed-topp-tests.py --openms <OpenMS checkout> --select all --fetch-missing  # C3
+python3 scripts/deb-distributions.py --deb <OpenMS .deb>   # C6, needs docker
+python3 scripts/container-checks.py --image ghcr.io/openms/openms-tools-thirdparty:latest  # C10, needs docker
 python3 scripts/pyopenms-api.py snapshot --out <file>                                       # in each venv
 python3 scripts/pyopenms-api.py diff <old> <new> --docs <user_guide> --changelog <CHANGELOG> # D1, D4
 python3 scripts/doc-examples.py --python <venv python> --docs <user_guide> [--baseline <report>]  # D2, D3

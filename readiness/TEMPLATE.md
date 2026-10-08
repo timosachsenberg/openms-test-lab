@@ -43,10 +43,12 @@ evidence.
 - [ ] C2 The bundled search engines start —
 - [ ] C3 Upstream TOPP and TOPPAS tests pass on the installation (per platform: passed/failed, not-registered tests and why, replay notes) —
 - [ ] C4 Adapters find the bundled engines on their own —
-- [ ] C5 Vendor readers work in the installed package —
-- [ ] C6 The DEB installs where it claims to —
+- [ ] C5 Vendor readers work in the installed package (Thermo also through a symbolic link) —
+- [ ] C6 The DEB installs where it claims to (per distribution: installs or refused as documented) —
 - [ ] C7 Upgrades order correctly —
 - [ ] C8 A macOS upgrade installs the apps into the candidate's folder —
+- [ ] C9 The package parallelizes with OpenMP —
+- [ ] C10 The container image works like an installed package (x64 / arm64) —
 
 ### D. pyOpenMS: API and user guide
 - [ ] D1 Every removed public name is announced —
@@ -90,7 +92,7 @@ evidence.
 - [ ] G6 PyPI serves the release everywhere —
 - [ ] G7 Conda packages build and install —
 - [ ] G8 Documentation and links point at the release —
-- [ ] G9 Container images exist for the tag —
+- [ ] G9 Container images exist for the tag, and pass C10 —
 
 ### H. Human checks
 - [ ] H1 GUI on each platform —

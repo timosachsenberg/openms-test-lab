@@ -6,13 +6,16 @@ RELEASE-READINESS.md says how each result is judged.
 
     python3 scripts/release-readiness.py all                  # nightly wheel + nightly DEB
     LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=release/3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
+        LAB_CONTAINER_IMAGE=ghcr.io/openms/openms-tools-thirdparty:3.6.0 \\
         python3 scripts/release-readiness.py all              # a release candidate
 
 Phases, in order (each can also be run alone):
 
   resolve   pick the candidate wheel and DEB, and the previous release as baseline
-  desktop   install the DEB, start every tool, run upstream TOPP tests (installed-checks.py)
+  desktop   install the DEB, start every tool, run upstream TOPP tests (installed-checks.py),
+            then install it on every documented distribution (deb-distributions.py)
   pkg       F11: what the candidate's macOS .pkg lets the Installer relocate (macos_pkg.py)
+  container C10: the container image, checked like an installed package (container-checks.py)
   python    candidate and baseline pyOpenMS in separate venvs, public API snapshot of each
   source    the OpenMS sources of the candidate's revision, plus the baseline release tag
   docs      user-guide examples on baseline and candidate, API diff, source docs audit
@@ -72,7 +75,8 @@ def desktop():
     env = dict(os.environ, LAB_OPENMS_PACKAGE=os.environ.get("LAB_OPENMS_PACKAGE", "nightly"))
     run([sys.executable, ROOT / "scripts/unix-lab.py", "native"], env=env)
     result = run([sys.executable, ROOT / "scripts/installed-checks.py"], check=False)
-    state({"desktop_exit": result.returncode})
+    distributions = run([sys.executable, ROOT / "scripts/deb-distributions.py"], check=False)
+    state({"desktop_exit": result.returncode, "deb_distributions_exit": distributions.returncode})
 
 
 def pkg():
@@ -80,6 +84,12 @@ def pkg():
     result = run([sys.executable, ROOT / "scripts/macos_pkg.py", selection, "--report", REPORTS / "macos-pkg.json"],
                  check=False, stdout=subprocess.DEVNULL)
     state({"macos_package": selection, "macos_pkg_exit": result.returncode})
+
+
+def container():
+    image = os.environ.get("LAB_CONTAINER_IMAGE", "").strip() or "ghcr.io/openms/openms-tools-thirdparty:latest"
+    result = run([sys.executable, ROOT / "scripts/container-checks.py", "--image", image], check=False)
+    state({"container_image": image, "container_exit": result.returncode})
 
 
 def venv(name, requirement):
@@ -177,6 +187,34 @@ def summary():
         "no report" if upstream is None else
         f"{upstream['summary']} of {upstream['selected']} selected; {upstream.get('not_registered', 0)} not "
         f"registered for this package; replay notes: {upstream.get('replay_notes') or 'none'}")
+    checks = load("installed-checks.json") or {}
+    thermo = checks.get("thermo")
+    runs = [f"{mode}: exit {thermo[mode]['exit']}, {thermo[mode]['spectra']} spectra" for mode in
+            ("default", "inprocess", "symlink") if thermo and "exit" in thermo.get(mode, {})]
+    if thermo and thermo.get("symlink", {}).get("status") == "not run":
+        runs.append(f"symlink not run: {thermo['symlink']['reason']}")
+    row("C5 Thermo reader: default, in-process, through a symbolic link",
+        None if not thermo or thermo["status"] == "skipped" else thermo["status"] == "passed",
+        "; ".join(runs) or (thermo or {}).get("reason", "no report"))
+    distributions = load("deb-distributions.json")
+    row("C6 the DEB installs on every documented distribution, and is refused where documented",
+        None if distributions is None or distributions["status"] in ("skipped", "not run")
+        else distributions["status"] == "passed",
+        "no report" if distributions is None else "; ".join(
+            f"{d['image']} {d['expect']}: {d['status']}" + ("" if d["status"] == "passed" else
+                                                            f" ({d.get('reason') or ', '.join(d.get('problems', []))})")
+            for d in distributions.get("distributions", [])) or distributions.get("reason", ""))
+    openmp = checks.get("openmp")
+    row("C9 the package parallelizes with OpenMP", None if openmp is None else openmp["status"] == "passed",
+        "no report" if openmp is None else f"OpenMSInfo: OpenMP {openmp.get('openmp') or openmp.get('reason')}")
+    image = load("container-checks.json")
+    if image is not None:
+        differ = image.get("options", {}).get("differ") or {}
+        row("C10 the container image passes the installed checks", None if image["status"] == "not run"
+            else image["status"] == "passed",
+            f"{image.get('digest') or image['image']}, revision {(image.get('installed', {}).get('revision') or '?')[:7]}: "
+            + "; ".join(f"{step} {image[step]['status']}" for step in ("pristine", "installed", "options") if step in image)
+            + "".join(f"; {name}={d['image']}, installers {d['installers']}" for name, d in differ.items()))
     diff = load("pyopenms-api-diff.json")
     if diff:
         row("D1 removed Python names are in the CHANGELOG", not diff.get("removed_names_not_in_changelog"),
@@ -264,17 +302,20 @@ def read_desktop_revision():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=["resolve", "desktop", "pkg", "python", "source", "docs", "summary", "all"])
+    parser.add_argument("phase", choices=["resolve", "desktop", "pkg", "container", "python", "source", "docs",
+                                          "summary", "all"])
     phase = parser.parse_args().phase
     os.chdir(ROOT)
     REPORTS.mkdir(exist_ok=True)
     WORK.mkdir(parents=True, exist_ok=True)
-    phases = {"resolve": resolve, "desktop": desktop, "pkg": pkg, "python": python_phase, "source": source,
-              "docs": docs, "summary": summary}
+    phases = {"resolve": resolve, "desktop": desktop, "pkg": pkg, "container": container, "python": python_phase,
+              "source": source, "docs": docs, "summary": summary}
     for name in (list(phases) if phase == "all" else [phase]):
         if name == "desktop" and os.environ.get("LAB_OPENMS_PACKAGE", "nightly").strip().lower() in ("", "none"):
             continue
         if name == "pkg" and os.environ.get("LAB_MACOS_PACKAGE", "nightly").strip().lower() == "none":
+            continue
+        if name == "container" and os.environ.get("LAB_CONTAINER_IMAGE", "").strip().lower() == "none":
             continue
         phases[name]()
 

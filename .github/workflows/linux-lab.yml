@@ -92,6 +92,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/installed-checks.py
+      - name: C6 · install the DEB on every documented distribution
+        if: ${{ !cancelled() && inputs.openms_package != 'none' }}
+        run: python3 scripts/deb-distributions.py
       - name: Inventory after native installation
         if: ${{ !cancelled() }}
         run: python3 scripts/unix-lab.py baseline-after

@@ -2,9 +2,10 @@ name: Release readiness
 run-name: Release readiness · ${{ inputs.pyopenms_spec }} · ${{ inputs.openms_package }}
 
 # The automated Linux part of RELEASE-READINESS.md in one run: the candidate's desktop
-# package (every tool, bundled engines, upstream TOPP tests against the installation), what
-# its macOS package lets the Installer relocate (F11), and its pyOpenMS (public API against
-# the previous release, user-guide examples, documentation audit of the matching sources).
+# package (every tool, bundled engines, upstream TOPP tests against the installation, the DEB
+# on every documented distribution), what its macOS package lets the Installer relocate (F11),
+# its container image checked the same way (C10), and its pyOpenMS (public API against the
+# previous release, user-guide examples, documentation audit of the matching sources).
 # Platform coverage comes from the three package labs.
 
 on:
@@ -21,6 +22,10 @@ on:
       macos_package:
         description: nightly, a release tag, an HTTPS PKG URL, or none; F11 reads its PackageInfo
         default: nightly
+        type: string
+      container_image:
+        description: Container image for C10, e.g. ghcr.io/openms/openms-tools-thirdparty:<version>; none to skip
+        default: ghcr.io/openms/openms-tools-thirdparty:latest
         type: string
       baseline:
         description: Previous release to compare against; blank means the newest pyopenms on PyPI
@@ -46,6 +51,7 @@ jobs:
       LAB_PYOPENMS_SPEC: ${{ inputs.pyopenms_spec }}
       LAB_OPENMS_PACKAGE: ${{ inputs.openms_package }}
       LAB_MACOS_PACKAGE: ${{ inputs.macos_package }}
+      LAB_CONTAINER_IMAGE: ${{ inputs.container_image }}
       LAB_BASELINE: ${{ inputs.baseline }}
       LAB_TOPP_TEST_SELECTION: ${{ inputs.topp_test_selection }}
       PYTHONUNBUFFERED: '1'
@@ -69,6 +75,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release-readiness.py pkg
+      - name: C10 · check the container image like an installed package
+        if: ${{ !cancelled() && inputs.container_image != 'none' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-readiness.py container
       - name: Install candidate and baseline pyOpenMS
         if: ${{ !cancelled() }}
         run: python3 scripts/release-readiness.py python

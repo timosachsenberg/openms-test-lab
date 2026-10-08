@@ -3,17 +3,19 @@
 The labs install the package and leave its bin directory in reports/openms-bin.txt. This
 step then
 
-  1. starts every registered tool (scripts/topp-tools-smoke.py), and
+  1. starts every registered tool (scripts/topp-tools-smoke.py),
   2. fetches src/tests/topp and src/tests/toppas of the exact commit the package was built
      from (the Revision that `FileInfo --help` prints) and replays the upstream TOPP and
      TOPPAS pipeline tests against the installed binaries (scripts/installed-topp-tests.py):
      all of them by default, or the selection in LAB_TOPP_TEST_SELECTION (release-gate, all,
-     or a regex on test names), and
-  3. converts the Thermo .raw file among those tests with FileConverter's default reader and
-     with each reader explicitly (C5 for Thermo; see check_thermo).
+     or a regex on test names),
+  3. converts the Thermo .raw file among those tests with FileConverter's default reader,
+     with each reader explicitly and through a symbolic link (C5 for Thermo; see
+     check_thermo), and
+  4. reads from OpenMSInfo whether the build parallelizes with OpenMP (C9).
 
 Nothing is installed or changed on the system. When no desktop package was installed the
-step records that and succeeds. It exits non-zero when either check failed, after writing
+step records that and succeeds. It exits non-zero when any check failed, after writing
 all reports, so the lab run shows red while later steps still run.
 """
 import json
@@ -78,8 +80,9 @@ def session_env(env):
 
 
 def check_thermo(bin_dir, env):
-    """C5 for Thermo: FileConverter converts the fixture with its default reader, and the
-    in-process reader writes as many spectra.
+    """C5 for Thermo: FileConverter converts the fixture with its default reader, the
+    in-process reader writes as many spectra, and so does the default reader when the file
+    is given through a symbolic link, as workflow systems stage it.
 
     The explicit external run shows whether ThermoRawFileParser works as installed (on the
     PATH, plus mono on Linux and macOS). The in-process reader needs a .NET 8 runtime; the hosted
@@ -107,23 +110,61 @@ def check_thermo(bin_dir, env):
             result["dotnet_root_set_by_check"] = run_env["DOTNET_ROOT"]
     scratch = ROOT / "downloads" / "thermo-check"
     scratch.mkdir(parents=True, exist_ok=True)
-    for mode, options in (("default", []), ("external", ["-RawToMzML:reader", "external"]),
-                          ("inprocess", ["-RawToMzML:reader", "inprocess"])):
+
+    def convert(mode, source, options):
         out = scratch / f"{mode}.mzML"
         out.unlink(missing_ok=True)
         try:
-            converted = subprocess.run([str(bin_dir / f"FileConverter{EXE}"), "-in", str(raw), "-out", str(out),
+            converted = subprocess.run([str(bin_dir / f"FileConverter{EXE}"), "-in", str(source), "-out", str(out),
                                         "-no_progress", *options], capture_output=True, text=True, errors="replace",
                                        stdin=subprocess.DEVNULL, env=run_env, timeout=900)
             code, log = converted.returncode, converted.stdout + converted.stderr
         except subprocess.TimeoutExpired:
             code, log = "timeout", ""
-        spectra = out.read_text(encoding="utf-8", errors="replace").count("<spectrum ") if out.is_file() else 0
-        result[mode] = {"exit": code, "spectra": spectra, "log_tail": log.strip().splitlines()[-12:]}
-    default, inprocess = result["default"], result["inprocess"]
+        text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else ""
+        source_file = re.search(r'<sourceFile\b[^>]*\bname="([^"]*)"', text)
+        return {"exit": code, "spectra": text.count("<spectrum "), "source_file": source_file and source_file.group(1),
+                "log_tail": log.strip().splitlines()[-12:]}
+
+    for mode, options in (("default", []), ("external", ["-RawToMzML:reader", "external"]),
+                          ("inprocess", ["-RawToMzML:reader", "inprocess"])):
+        result[mode] = convert(mode, raw, options)
+    # Nextflow and Galaxy stage every input as a symbolic link under a name of their own, and
+    # match results to the experimental design by that name (OpenMS/OpenMS#10451). The default
+    # reader has to read through the link and keep its name in the mzML.
+    staged = scratch / "staged" / "staged-input.raw"
+    staged.parent.mkdir(exist_ok=True)
+    staged.unlink(missing_ok=True)
+    try:
+        staged.symlink_to(raw.resolve())
+    except OSError as error:  # Windows without the privilege to create symbolic links
+        result["symlink"] = {"status": "not run", "reason": f"cannot create a symbolic link: {error}"}
+    else:
+        result["symlink"] = dict(convert("symlink", staged, []), input=f"{staged.name} -> {raw.name}")
+    default, inprocess, symlink = result["default"], result["inprocess"], result["symlink"]
     passed = default["exit"] == 0 and default["spectra"] > 0 and inprocess["spectra"] == default["spectra"]
+    if "exit" in symlink:
+        symlink["status"] = ("passed" if symlink["exit"] == 0 and symlink["spectra"] == default["spectra"]
+                             and symlink["source_file"] == staged.name else "failed")
+        passed = passed and symlink["status"] == "passed"
     result["status"] = "passed" if passed else "failed"
     return result
+
+
+def check_openmp(bin_dir, env):
+    """C9: the package parallelizes with OpenMP. A build that finds no OpenMP runtime falls
+    back to -fopenmp-simd, which compiles out every `#pragma omp parallel`, so -threads has no
+    effect (OpenMS/OpenMS#10326, the 3.6.0 macOS package). OpenMSInfo says which it is."""
+    try:
+        info = subprocess.run([str(bin_dir / f"OpenMSInfo{EXE}")], capture_output=True, text=True, errors="replace",
+                              stdin=subprocess.DEVNULL, env=env, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"status": "failed", "reason": f"OpenMSInfo did not run: {error}"}
+    line = re.search(r"^OpenMP\s*:\s*(.+?)\s*$", info.stdout + info.stderr, re.M)
+    if not line:
+        return {"status": "failed", "exit": info.returncode, "reason": "OpenMSInfo printed no OpenMP line"}
+    return {"status": "passed" if line.group(1).startswith("enabled") else "failed", "openmp": line.group(1),
+            "exit": info.returncode}
 
 
 def main():
@@ -169,8 +210,10 @@ def main():
     libs += (["/", "--file-list", str(package_files)] if package_files.exists() else [str(bin_dir.parent)])
     summary["bundled_libs_exit"] = subprocess.run(libs, env=child_env).returncode
     summary["thermo"] = check_thermo(bin_dir, child_env)
+    summary["openmp"] = check_openmp(bin_dir, child_env)
     failed = (summary.get("tools_exit") or summary.get("upstream_exit") or summary.get("bundled_libs_exit")
-              or summary.get("upstream_tests") == "error" or summary["thermo"]["status"] == "failed")
+              or summary.get("upstream_tests") == "error" or summary["thermo"]["status"] == "failed"
+              or summary["openmp"]["status"] == "failed")
     summary["status"] = "failed" if failed else "passed"
     (REPORTS / "installed-checks.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))

@@ -145,8 +145,10 @@ Check before [step 6](#6-publish-pyopenms-to-pypi) and before announcing:
   `FileInfo --help` says `Version: X.Y.Z`; the tarball is named `OpenMS-X.Y.Z.tar.gz`.
 - **G5:** run the release matrix with `openms_package=vX.Y.Z` (the labs resolve a GitHub release
   by its tag) and `pyopenms_spec=<wheel URL from the archive folder>`. Then run *Release
-  readiness* with the same two values.
-- **G9:** the container tags exist. To fix a wrongly named tag, copy it rather than rebuild,
+  readiness* with the same two values and `container_image=ghcr.io/openms/openms-tools-thirdparty:X.Y.Z`.
+- **G9:** the container tags exist, and the *Container lab* passes C10 for
+  `ghcr.io/openms/openms-tools-thirdparty:X.Y.Z` on `ubuntu-24.04-arm` (Release readiness covers
+  x64). To fix a wrongly named tag, copy it rather than rebuild,
   so both names carry the same image: run
   `docker buildx imagetools create --tag ghcr.io/openms/<image>:X.Y.Z ghcr.io/openms/<image>:<wrong tag>`
   for each image. That needs write access to the `ghcr.io/openms` packages.
