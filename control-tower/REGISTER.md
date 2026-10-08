@@ -1,20 +1,22 @@
 # Control tower register
 
-Last digest: 2026-10-08T15:51Z (second digest; covers sessions updated since 14:46Z)
+Last digest: 2026-10-08T21:25Z (third digest; all active sessions read, PR states checked live on OpenMS repos)
 
 ## Sessions (not archived)
 
 | Session | Title | State | Waiting on |
 | --- | --- | --- | --- |
-| session_01B51nRFoHvZuVXD7cT8XZav | OpenMS idparquet native migration | working (feature linking) | issue for #2; answer on OpenSWATH protein_refs (no trace of one); review of draft OpenMS/OpenMS#10423 |
-| session_0191LNr9sLGKAN6uGXdyH88H | PR #119 review and testing (bigbio/andes) | working | — |
-| session_01UQCiwdbPoEkrebED8VQ2TJ | Difference between #10400 and #10403 | working (fixing 6 review findings) | step 5 choices: `annotate:self_trained_ion_priors` clash with #10378, isotope_error sign, `precursor:isotopes` removal, Sage-like deisotoping default; then merge #10400, close #10403 |
+| session_01B51nRFoHvZuVXD7cT8XZav | OpenMS idparquet native migration | needs you (idle since 21:07) | cluster choice: QC+MQ exporters or producers/pipelines/GUI/loader switch (asked 5 times, no recommendation); expected file FeatureLinkerUnlabeled_1_output.consensusXML reordered; draft #10423 green, base old |
+| session_0191LNr9sLGKAN6uGXdyH88H | PR #119 review and testing (bigbio/andes) | archived 20:48; fast-forward to 3495a43 done 20:22 | open offers: OpenMS PR for purity bug (#10467), review post |
+| session_01UQCiwdbPoEkrebED8VQ2TJ | Difference between #10400 and #10403 | working (Velos gap) | PR #10466 (draft) is in merge conflict with develop, its CI never ran on c66dadd; four maintainer decisions open |
 | session_013WpJU7kvPs7wZymufRtjuZ | Review 10413 | working (rewriting the RFC issue body, as asked 15:42) | — |
-| session_01MmskqjZ8rz3sdTKoACxbqz | Nightly test lab analysis | review ready | maintainer approval on #10442 (CI green on 640c59cb); re-check 19:44Z |
-| session_01M6AHDXanQaXQA1vwts2r81 | Bug: OnDiscMSExperiment range filter drops spectrum metadata | starting (spawned 15:55Z for #29) | — |
-| session_015XZxMxzXdp9KCpUSpQL9EF | Bug: OpenSSL 3.6.4 pinned in vcpkg.json | review ready | CI on OpenMS/OpenMS#10458; check-in 16:17Z |
-| session_017T36hh5UMDeyMRwLiBVkbi | Bug: TOPP -write_cwl crashes | idle, CWL-enabled build running | fix af3ef01 committed, not pushed; then PR |
-| session_01DtWvvGGZSyZtVEvxGcPBGc | Bug: SimpleSearchEngine deisotoping deletes fragments | idle, build running | regression test pushed (claude/sse-deisotope-start-check); fix not written |
+| session_01MmskqjZ8rz3sdTKoACxbqz | Nightly test lab analysis | review ready | maintainer review on #10442 (green on 640c59cb, question to jpfeuffer/poshul unanswered); check-in 23:46Z |
+| session_01M6AHDXanQaXQA1vwts2r81 | Bug: OnDiscMSExperiment range filter drops spectrum metadata | review ready | PR #10464, CI re-running on 926ac59, needs review; AUTHORS box ticked unchecked |
+| session_015XZxMxzXdp9KCpUSpQL9EF | Bug: OpenSSL 3.6.4 pinned in vcpkg.json | review ready | PR #10458 mergeable, 31/32 green, macOS build running 2.5 h+ |
+| session_017T36hh5UMDeyMRwLiBVkbi | Bug: TOPP -write_cwl crashes | review ready | PR #10459 CI green but in merge conflict with develop (session unaware); check-in 00:50Z |
+| session_01DtWvvGGZSyZtVEvxGcPBGc | Bug: SimpleSearchEngine deisotoping deletes fragments | not in active list (not re-read) | state unknown since 15:30 |
+| session_01Pxi3mzoptivbseUeJHjy2C | develop: strict protein-run contract for peptide identifications (child of idparquet) | working, plan pending | policy choice on missing run references: omit, throw or warn |
+| session_01HJitekJKm6HFXbNXbrdeof | OpenMS-test lab release readiness | working | Windows lab #39 failed in "Start every installed tool and run upstream TOPP tests", not mentioned by the session; Release readiness #13 running |
 | session_01WZ2mArNHq4sHgJEMJmn2zU | Prose in-process percolator usage | done | you: treat OpenMS/OpenMS#10449 as the vehicle; branch claude/vigilant-cori-lvoib0 can go |
 | session_01D1N3pC2AqJt57Q3v87bWxz | ProSE improvement PRs untangling | done (idle since 10-03) | approve/merge or close #9975 |
 | session_015y74VhdLraCwu7JxgvGwd9 | OpenMS issue #10326 status | done | — (#10396 merged; 10-08 macOS nightly green) |
@@ -25,7 +27,7 @@ Archived since the first digest (asks they left are orphaned until someone takes
 QPX Parquet export dedup (root cause is coincident target/decoy features; its own fix was dropped
 for jpfeuffer's OpenMS/OpenMS#10453, branch reset to develop; findings 12 and 13 never filed),
 LFQ and TMT quantification in Andes (OpenMS/OpenMS#10448 merged; Andes work on bigbio/andes branch
-claude/intelligent-johnson-tk7099 at a52aece, no PR), OpenMS PR #10402 review (asked to open issues
+claude/intelligent-johnson-tk7099 at a52aece; PR bigbio/andes#119, head a52aece, state not checked, reviewed by session_0191LNr9sLGKAN6uGXdyH88H), OpenMS PR #10402 review (asked to open issues
 for 4 and 5), OpenMS issue #10110 resolution (asked why #10409 was closed), ProSE speed
 optimizations (asked to reopen #10407 or open a new PR from claude/vibrant-edison-n57o3w).
 
@@ -69,6 +71,12 @@ spawn? = bug waits for confirmation to get a session; spawned = bug session runn
 | 32 | bigbio/andes: `--lfq-min-cosine` is parsed and logged but never applied | bug (external: bigbio/andes) | PR #119 review | owned (reviewing PR #119) | PR #119 review |
 | 33 | bigbio/andes: default MS3 tolerance too wide for SPS-MS3; at 0.002 Da / 20 ppm raw MS3 reporter values match OpenMS IsobaricAnalyzer on all 52 joined scans | bug (external: bigbio/andes) | PR #119 review | owned (reviewing PR #119) | PR #119 review |
 | 34 | Environment network policy blocks github.com archive downloads (403): vcpkg cannot fetch, the CLAUDE.md build route fails; allow `github.com` and `codeload.github.com` | environment | Bug: write_cwl | open (needs you, environment settings) | — |
+| 35 | OpenMS #10459 and #10466 conflict with develop (6 commits ahead); their sessions do not know | process | digest 3 | open (tell the sessions to merge develop) | — |
+| 36 | #10466 commit cc1ad59 is authored as Julianus Pfeuffer although a session wrote it (applied by hand after auto mode denied cherry-pick) | attribution | Difference between #10400 and #10403 | open (needs you: Co-authored-by instead?) | — |
+| 37 | bigbio/andes: multi-run --output-parquet crashes (byte array offset overflow in psms.parquet writer, predates #119); QPX feature_id/psm_ids not QPX-conformant | bug (external: bigbio/andes) | PR #119 review (archived) | spawn? | — |
+| 38 | OpenMS FileHandler.cpp:1542-1547 OMSSA load pushes an empty run then writes into additional_proteins[0] (overwrites run 0 when non-empty); MzTab.cpp:1136,1241 and IdentificationDataConverter.cpp:204 throw bare out_of_range after MzTabFile::store truncated the output | bug | strict protein-run contract | owned (likely in scope) | session_01Pxi3mzoptivbseUeJHjy2C |
+| 39 | OpenMS #10467: isobaric precursor purity uses neutron mass and one-sided peak search, purity >= 0.75 for 2 of 2,419 scans; no fix PR yet | bug | PR #119 review | open (issue filed) | — |
+| 40 | MapAlignmentAlgorithmIdentification::setReference treats a map with no features as empty even with unassigned IDs; RT-less IDs used to put NaN into medians | minor | idparquet migration | open | — |
 
 Closed (fixed, kept for reference): IsobaricWorkflow purity tolerance (#10448, finding 6, merged 10-08),
 IDConflictResolver lower-is-better (#10444), AccurateMassSearch signed ppm (#10446),
