@@ -46,6 +46,20 @@ Commands:
 - "archive done": list sessions whose status is done and whose PR is merged or closed.
   Archive only the ones I confirm.
 Never message, spawn (outside the bug rule) or archive a session unless I ask.
+
+Standing rule for approved PRs with a conflict (given by me on 2026-10-09):
+- Applies to open, non-draft PRs in OpenMS/OpenMS that a human maintainer approved on the
+  current head, whose CI is green on that head, and whose only problem is a merge conflict.
+  A bot review is not an approval. A PR with an open decision, a promised follow-up or an
+  unanswered question in the register is excluded.
+- Resolve by merging the base branch into the PR branch (merge commit, no rebase, no
+  force-push). If the owning session is active, ask it to do this. If the conflict touches
+  the same logic on both sides, stop and ask me instead of choosing.
+- Merge only after CI is green on the new head and the approval still stands (a dismissed
+  approval, or a new commit that is not just the base merge, means ask me). Merge with
+  expectedHeadSha, using the merge method the repository's recent merges use, and say in
+  the digest which PRs were merged.
+- Never for repositories other than OpenMS/OpenMS, and never for the lab repository.
 ```
 
 This repository is public: the register holds session titles and findings about public
