@@ -1,29 +1,29 @@
 # Control tower register
 
-Last digest: 2026-10-08T21:25Z (third digest; all active sessions read, PR states checked live on OpenMS repos)
+Last digest: 2026-10-09T05:35Z (fourth digest; all active sessions read, PR states checked live)
 
 ## Sessions (not archived)
 
 | Session | Title | State | Waiting on |
 | --- | --- | --- | --- |
-| session_01B51nRFoHvZuVXD7cT8XZav | OpenMS idparquet native migration | needs you (idle since 21:07) | cluster choice: QC+MQ exporters or producers/pipelines/GUI/loader switch (asked 5 times, no recommendation); expected file FeatureLinkerUnlabeled_1_output.consensusXML reordered; draft #10423 green, base old |
+| session_01B51nRFoHvZuVXD7cT8XZav | OpenMS idparquet native migration | needs you (idle) | confirm reorder in FeatureLinkerUnlabeled_1_output.consensusXML (asked 5 times); QC tool flow and MQ exporters moved to pipelines cluster (answered 05:06); draft #10423 conflicts with develop (dirty), CI skipped until develop is merged |
 | session_0191LNr9sLGKAN6uGXdyH88H | PR #119 review and testing (bigbio/andes) | archived 20:48; fast-forward to 3495a43 done 20:22 | open offers: OpenMS PR for purity bug (#10467), review post |
-| session_01UQCiwdbPoEkrebED8VQ2TJ | Difference between #10400 and #10403 | working (Velos gap) | PR #10466 (draft) is in merge conflict with develop, its CI never ran on c66dadd; four maintainer decisions open |
+| session_01UQCiwdbPoEkrebED8VQ2TJ | Difference between #10400 and #10403 | blocked (waiting for Oliver) | PR #10466 draft, green 31/31 on 5a916bd; Oliver (admin) has not pushed his 16-commit fix branch; open: name clash with #10378, breaking changes, deisotoping default, held-out confirmation; check-in 07:08Z |
 | session_013WpJU7kvPs7wZymufRtjuZ | Review 10413 | working (rewriting the RFC issue body, as asked 15:42) | — |
-| session_01MmskqjZ8rz3sdTKoACxbqz | Nightly test lab analysis | review ready | maintainer review on #10442 (green on 640c59cb, question to jpfeuffer/poshul unanswered); check-in 23:46Z |
-| session_01M6AHDXanQaXQA1vwts2r81 | Bug: OnDiscMSExperiment range filter drops spectrum metadata | review ready | PR #10464, CI re-running on 926ac59, needs review; AUTHORS box ticked unchecked |
-| session_015XZxMxzXdp9KCpUSpQL9EF | Bug: OpenSSL 3.6.4 pinned in vcpkg.json | review ready | PR #10458 mergeable, 31/32 green, macOS build running 2.5 h+ |
-| session_017T36hh5UMDeyMRwLiBVkbi | Bug: TOPP -write_cwl crashes | review ready | PR #10459 CI green but in merge conflict with develop (session unaware); check-in 00:50Z |
+| session_01MmskqjZ8rz3sdTKoACxbqz | Nightly test lab analysis | blocked (review) | #10442 green 31/31, no approving review, question to jpfeuffer/poshul unanswered, AUTHORS unticked |
+| session_01M6AHDXanQaXQA1vwts2r81 | Bug: OnDiscMSExperiment range filter drops spectrum metadata | needs you | push fixes 1-3 on #10464 (recommended yes; restarts CI, clang++ ~1h40m); #10464 green 31/31 on 99efcfb, needs human review; AUTHORS box |
+| session_015XZxMxzXdp9KCpUSpQL9EF | Bug: OpenSSL 3.6.4 pinned in vcpkg.json | blocked (review) | PR #10458 green 32/32, no reviews |
 | session_01DtWvvGGZSyZtVEvxGcPBGc | Bug: SimpleSearchEngine deisotoping deletes fragments | not in active list (not re-read) | state unknown since 15:30 |
-| session_01Pxi3mzoptivbseUeJHjy2C | develop: strict protein-run contract for peptide identifications (child of idparquet) | working, plan pending | policy choice on missing run references: omit, throw or warn |
-| session_01HJitekJKm6HFXbNXbrdeof | OpenMS-test lab release readiness | working | Windows lab #39 failed in "Start every installed tool and run upstream TOPP tests", not mentioned by the session; Release readiness #13 running |
+| session_01ALQq7vda2rp8XfU8Lj53e3 | Rusttims/mzpeak/mzdata code research | needs you | OpenMS/OpenMS#10469 (BrukerTimsFile m/z calibration) already opened 04:49Z, session unaware; post 31-file research comment on issue #10468? (never answered) |
+| session_01Pxi3mzoptivbseUeJHjy2C | develop: strict protein-run contract for peptide identifications | needs you (idle, disconnected) | (1) copy new outputs over 20 expected featureXML files (FeatureFinderIdentification_5_candidates + 19 OpenSwathWorkflow_*), recommended yes; (2) make featureXML/consensusXML writers throw on missing protein_refs (writes PH_0 today), recommended yes as a separate step; branch pushed, no PR |
+| session_01HJitekJKm6HFXbNXbrdeof | OpenMS-test lab release readiness | needs you | merge lab branch claude/openms-test-release-readiness-ks3twg (593c62d) to lab main (2-line conflict with wizardly-davinci-fg6gad); file OpenMS issue for OpenDIA Windows failure; Release readiness #13 failed (baseline tag release/3.6.0 vs v3.6.0), Windows lab #39: 2260/2261 TOPP tests, only TOPP_OpenDIA_auto_transition_list_sqlite fails |
 | session_01WZ2mArNHq4sHgJEMJmn2zU | Prose in-process percolator usage | done | you: treat OpenMS/OpenMS#10449 as the vehicle; branch claude/vigilant-cori-lvoib0 can go |
 | session_01D1N3pC2AqJt57Q3v87bWxz | ProSE improvement PRs untangling | done (idle since 10-03) | approve/merge or close #9975 |
 | session_015y74VhdLraCwu7JxgvGwd9 | OpenMS issue #10326 status | done | — (#10396 merged; 10-08 macOS nightly green) |
 | session_016mhkk96UKnN229owYHC75b | Pyopenms bioconda recipe revert | done | you: edit description of bioconda/bioconda-recipes#69770 |
 | session_013vafYuimyKzwjxdeqBKob5 | Static linking GUI applications to OpenMS | done | maintainers on #10384 (okohlbacher replied 10-02, session never saw it) |
 
-Archived since the first digest (asks they left are orphaned until someone takes them):
+Archived (asks they left are orphaned until someone takes them): Bug: TOPP -write_cwl crashes (OpenMS/OpenMS#10459 merged 10-09 03:09, archived by the tower), :.
 QPX Parquet export dedup (root cause is coincident target/decoy features; its own fix was dropped
 for jpfeuffer's OpenMS/OpenMS#10453, branch reset to develop; findings 12 and 13 never filed),
 LFQ and TMT quantification in Andes (OpenMS/OpenMS#10448 merged; Andes work on bigbio/andes branch
@@ -77,6 +77,14 @@ spawn? = bug waits for confirmation to get a session; spawned = bug session runn
 | 38 | OpenMS FileHandler.cpp:1542-1547 OMSSA load pushes an empty run then writes into additional_proteins[0] (overwrites run 0 when non-empty); MzTab.cpp:1136,1241 and IdentificationDataConverter.cpp:204 throw bare out_of_range after MzTabFile::store truncated the output | bug | strict protein-run contract | owned (likely in scope) | session_01Pxi3mzoptivbseUeJHjy2C |
 | 39 | OpenMS #10467: isobaric precursor purity uses neutron mass and one-sided peak search, purity >= 0.75 for 2 of 2,419 scans; no fix PR yet | bug | PR #119 review | open (issue filed) | — |
 | 40 | MapAlignmentAlgorithmIdentification::setReference treats a map with no features as empty even with unassigned IDs; RT-less IDs used to put NaN into medians | minor | idparquet migration | open | — |
+| 41 | OpenMS BrukerTimsFile (opentims sqrt-linear default): m/z off by up to +1793 ppm on otofControl 5.x and -829 ppm on a 2021 fleX; partly fixed by OpenMS/OpenMS#10469 (ModelType 2 still up to 7.8 ppm) | bug | Rusttims research | owned | session_01ALQq7vda2rp8XfU8Lj53e3 |
+| 42 | OpenMS src/topp/QualityControl sorts each feature's IDs by score descending regardless of direction, so the first (used by MQ exporters) is the worst for q-values | bug | idparquet migration | spawned | session_01QggJufF4E4Nw9bmMJaP36f |
+| 43 | OpenMS KERNEL/OnDiscMSExperiment.cpp:116 getSpectrumByNativeId and getChromatogramByNativeId ignore PeakFileOptions range and MS-level filters; IndexedMzMLHandler.cpp:267,301 report unfiltered min/max after select() | bug | OnDisc bug session | owned (fixes 1-3 await your yes) | session_01M6AHDXanQaXQA1vwts2r81 |
+| 44 | OpenMS TOPP_OpenDIA_auto_transition_list_sqlite fails on Windows (only failure of 2261 in the installed-package run) | bug | release readiness | open (no issue filed; AGENTS.md requires your explicit request) | — |
+| 45 | Oliver's #10466 review: ASan hit in IDScoreGetterSetter.cpp:263 (end() dereference in applyPickedProteinFDR); single-file ProSE modification analysis ignores FDR:protein; data race in bundled Percolator on -rescore path; he files them himself | bug | #10400/#10403 | owned by Oliver | — |
+| 46 | Windows CI deps step flakes on Chocolatey 504 (rclone in #10442, cmake in #10466); retry loop in tools/ci/deps-windows.sh proposed, not filed (see 20) | minor (flaky CI) | Nightly test lab, #10400/#10403 | open | — |
+| 47 | mobiusklein/mzdata 0.67.4 and mzpeak_prototyping: ModelType 2 gives m/z about 18-40 instead of 120-1200 | bug (external) | Rusttims research | open | — |
+| 48 | OpenMS #10423 draft conflicts with develop (dirty, base 420fccf); PR CI does not run until develop is merged | process | idparquet migration | open | idparquet migration |
 
 Closed (fixed, kept for reference): IsobaricWorkflow purity tolerance (#10448, finding 6, merged 10-08),
 IDConflictResolver lower-is-better (#10444), AccurateMassSearch signed ppm (#10446),
