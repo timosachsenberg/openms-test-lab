@@ -253,7 +253,7 @@ def summary():
                 return f"{name}: not run ({report.get('reason') or 'no reason given'})"
             pages = report.get("pages_with_findings") or {}
             found = ", ".join(f"{k} on {v} pages" for k, v in pages.items() if v) or "no findings"
-            extra = "; ".join(report.get("problems") or []) or report.get("reason") or ""
+            extra = "; ".join(report.get("problems") or []) or report.get("reason") or report.get("note") or ""
             warnings = report.get("sphinx_warnings", (report.get("build") or {}).get("sphinx_warnings"))
             return (f"{name}: {report['status']}, {report.get('pages', 0)} pages, {found}"
                     + (f", {warnings} Sphinx warnings" if warnings is not None else "") + (f" ({extra})" if extra else ""))

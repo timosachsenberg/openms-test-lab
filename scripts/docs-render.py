@@ -239,9 +239,12 @@ def main():
         if names:
             if build.get("status") == "not run" or not build.get("success"):
                 problems.append(f"the newest build is {build.get('state', 'missing')}, success={build.get('success')}")
-            if args.expect_wheel and build.get("pyopenms") and build["pyopenms"] != args.expect_wheel:
-                report["reason"] = (f"the newest build installed pyopenms {build['pyopenms']}, not "
-                                    f"{args.expect_wheel}: the published pages do not show the candidate")
+            if args.expect_wheel and build.get("pyopenms"):
+                # What is published is still checked; the candidate itself is the local build's part
+                report["candidate_shown"] = build["pyopenms"] == args.expect_wheel
+                if not report["candidate_shown"]:
+                    report["note"] = (f"the newest build installed pyopenms {build['pyopenms']}, not "
+                                      f"{args.expect_wheel}: the published pages do not show the candidate")
     if names:
         broken = {n: p["findings"] for n, p in sorted(pages.items()) if p.get("findings")}
         counts = {kind: sum(kind in f for f in broken.values()) for kind in BLOCKING + ("accessor",)}
@@ -258,7 +261,8 @@ def main():
                       unreadable=unreadable[:20], findings=broken)
     report_path.write_text(json.dumps(report, indent=1), encoding="utf-8")
 
-    print(f"E11 {args.project} {label}: {report['status']}" + (f" ({report.get('reason')})" if report.get("reason") else ""))
+    print(f"E11 {args.project} {label}: {report['status']}" + (f" ({report.get('reason')})" if report.get("reason") else "")
+          + (f"; note: {report['note']}" if report.get("note") else ""))
     build = report.get("build")
     if build:
         print(f"  build {build.get('id')}: {build.get('state')}, success {build.get('success')}, commit "
