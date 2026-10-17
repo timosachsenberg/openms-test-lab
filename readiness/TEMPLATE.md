@@ -69,6 +69,7 @@ evidence.
 - [ ] E8 The CHANGELOG is clean —
 - [ ] E9 Documentation builds without warnings —
 - [ ] E10 The online documentation of the version exists —
+- [ ] E11 The documentation renders correctly (built with the candidate's wheel / published `latest`) —
 
 ### F. Static checks of the artifacts
 - [ ] F1 Wheel tags match the declared floor —

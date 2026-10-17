@@ -17,7 +17,7 @@ See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inp
 
 **Making a release:** [RELEASE-PROCESS.md](RELEASE-PROCESS.md) walks through every step from preparing `develop` to the announcement, and names the checks that gate each one.
 
-**Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
+**Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage and rendering, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
 
 ## Package sources
 

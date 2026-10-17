@@ -129,7 +129,10 @@ def python_phase():
         merged["libraries"] += data_part["libraries"]
         merged["blocking"] += data_part["blocking"]
     (REPORTS / "bundled-libs-wheel.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
-    state({"python_candidate": str(candidate), "python_baseline": str(baseline), "wheel_revision": revision})
+    version = run([candidate, "-c", "import pyopenms; print(pyopenms.__version__)"],
+                  capture_output=True, text=True).stdout.strip()
+    state({"python_candidate": str(candidate), "python_baseline": str(baseline), "wheel_revision": revision,
+           "wheel_version": version})
 
 
 def source():
@@ -167,6 +170,26 @@ def docs():
          "--out", REPORTS / "pyopenms-api-diff.json"])
     run([sys.executable, ROOT / "scripts/release-docs-audit.py", "--openms", SRC, "--base", data["baseline_tag"],
          "--report", REPORTS / "docs-audit.json"], check=False)
+    rendered_docs(data)
+
+
+def rendered_docs(data):
+    """E11: the pyOpenMS documentation built from the candidate's sources with the candidate's
+    wheel, as Read the Docs builds it, then the published `latest` of both projects."""
+    python, html = data["python_candidate"], WORK / "pyopenms-html"
+    source = SRC / "doc/pyopenms/docs"
+    run([python, "-m", "pip", "install", "-q", "-r", source / "requirements.txt"], check=False)
+    with open(REPORTS / "pyopenms-sphinx.log", "w", encoding="utf-8") as log:
+        built = run([python, "-m", "sphinx", "-b", "html", "-j", "auto", "-q", source / "source", html], check=False,
+                    stdout=log, stderr=subprocess.STDOUT)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--html", html, "--sphinx-log", REPORTS / "pyopenms-sphinx.log",
+         "--report", REPORTS / "docs-render-pyopenms-local.json"], check=False)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--project", "pyopenms", "--version", "latest",
+         *(["--expect-wheel", data["wheel_version"]] if data.get("wheel_version") else []),
+         "--report", REPORTS / "docs-render-pyopenms-latest.json"], check=False)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--project", "openms", "--version", "latest",
+         "--report", REPORTS / "docs-render-openms-latest.json"], check=False)
+    state({"pyopenms_docs_build_exit": built.returncode})
 
 
 def load(name):
@@ -221,6 +244,26 @@ def summary():
             f"{image.get('digest') or image['image']}, revision {(image.get('installed', {}).get('revision') or '?')[:7]}: "
             + "; ".join(f"{step} {image[step]['status']}" for step in ("pristine", "installed", "options") if step in image)
             + "".join(f"; {name}={d['image']}, installers {d['installers']}" for name, d in differ.items()))
+    rendered = {name: load(f"docs-render-{name}.json") for name in ("pyopenms-local", "pyopenms-latest", "openms-latest")}
+    if any(rendered.values()):
+        def part(name, report):
+            if report is None:
+                return f"{name}: no report"
+            if report["status"] == "not run":
+                return f"{name}: not run ({report.get('reason') or 'no reason given'})"
+            pages = report.get("pages_with_findings") or {}
+            found = ", ".join(f"{k} on {v} pages" for k, v in pages.items() if v) or "no findings"
+            extra = "; ".join(report.get("problems") or []) or report.get("reason") or ""
+            warnings = report.get("sphinx_warnings", (report.get("build") or {}).get("sphinx_warnings"))
+            return (f"{name}: {report['status']}, {report.get('pages', 0)} pages, {found}"
+                    + (f", {warnings} Sphinx warnings" if warnings is not None else "") + (f" ({extra})" if extra else ""))
+        statuses = [r["status"] for r in rendered.values() if r]
+        exit_code = data.get("pyopenms_docs_build_exit")
+        ok = (False if "failed" in statuses or exit_code not in (None, 0) else
+              None if None in rendered.values() or "not run" in statuses else all(s == "passed" for s in statuses))
+        row("E11 the documentation renders correctly", ok,
+            (f"the local Sphinx build exited {exit_code} (reports/pyopenms-sphinx.log); " if exit_code else "")
+            + "; ".join(part(n, r) for n, r in rendered.items()))
     diff = load("pyopenms-api-diff.json")
     if diff:
         row("D1 removed Python names are in the CHANGELOG", not diff.get("removed_names_not_in_changelog"),

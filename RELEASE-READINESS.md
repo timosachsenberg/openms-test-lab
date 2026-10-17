@@ -45,7 +45,8 @@ Rules that keep the verdict honest:
    workflow with its defaults, or on a Linux machine with sudo:
    `python3 scripts/release-readiness.py all`. Read `reports/readiness-summary.md`; it lists
    every automated result of A2, A3, C (with C6 on every documented distribution and C10 for
-   the container image), D, E, F6 and F11 by check ID. (GitHub offers a new
+   the container image), D, E (with E11, the documentation built with the candidate's wheel
+   and as published), F6 and F11 by check ID. (GitHub offers a new
    workflow for dispatch only once it is on the default branch; before that, run the script.)
 3. **Platform labs** (B): dispatch the release matrix below with `debug=false`. Every lab
    that installs a desktop package also runs C1–C3 (the full upstream TOPP suite), C5, C9 and
@@ -79,7 +80,7 @@ session that keeps the runner busy for an hour.
 
 | # | Workflow | Runner | Python | `pyopenms_spec` | `openms_package` | Covers |
 | --- | --- | --- | --- | --- | --- | --- |
-| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3, C5, C6, C9 and F6 on Linux x64, C10 (x64 image), D, E, F11 |
+| R | Release readiness | `ubuntu-24.04` | 3.12 | `nightly` | `nightly` | A2, A3, C1–C3, C5, C6, C9 and F6 on Linux x64, C10 (x64 image), D, E (E11 included), F11 |
 | 1 | Windows package lab | `windows-2025` | 3.12 | `nightly` | `nightly` | `win_amd64` wheel, `Win64.exe`, C1–C3, C5, C9 and F6 on Windows |
 | 2 | Windows package lab | `windows-2025` | 3.14 | `nightly` | `none` | newest CPython, wheel only |
 | 3 | macOS package lab | `macos-15` | 3.12 | `nightly` | `nightly` | Apple Silicon wheel and `.pkg`, C1–C3, C5, C9 and F6 on macOS |
@@ -209,8 +210,9 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 | E6 | Build options are documented | `DOC-CMAKE-OPTIONS` | New user-facing options documented, removed ones gone from the docs | Advisory |
 | E7 | Environment variables are documented | `DOC-ENV-VARS` | Each OpenMS-specific variable the code reads is named in user documentation | Advisory |
 | E8 | The CHANGELOG is clean | `CHANGELOG-LINT` | No duplicated bullets or orphaned text; at release, the heading carries a date instead of "under development" | Blocking at release |
-| E9 | Documentation builds without warnings | Build the `doc` target and run `Doxygen_Warning_test` (OpenMS `doc/CMakeLists.txt`); run `doc-validate.yml` (Sphinx for `doc/openms` and `doc/pyopenms`) on the candidate revision | Zero Doxygen warnings; both Sphinx builds succeed | Blocking |
-| E10 | The online documentation of the version exists | For every tool, the `Full documentation:` URL of `--help` (`doc_url` in `topp-tools.json`); `https://pyopenms.readthedocs.io/en/v<version>/` (before 3.6.0 `release-<version>`), which exists once the readthedocs version is activated ([RELEASE-PROCESS.md, step 7](RELEASE-PROCESS.md#7-documentation)) | HTTP 200 everywhere | Blocking after deployment |
+| E9 | Documentation builds without warnings | Build the `doc` target and run `Doxygen_Warning_test` (OpenMS `doc/CMakeLists.txt`); run `doc-validate.yml` (Sphinx for `doc/openms` and `doc/pyopenms`) on the candidate revision | Zero Doxygen warnings; both Sphinx builds succeed. A successful build is not a correctly rendered one: that is E11 | Blocking |
+| E10 | The online documentation of the version exists | For every tool, the `Full documentation:` URL of `--help` (`doc_url` in `topp-tools.json`); `https://pyopenms.readthedocs.io/en/v<version>/` (before 3.6.0 `release-<version>`), which exists once the readthedocs version is activated ([RELEASE-PROCESS.md, step 7](RELEASE-PROCESS.md#7-documentation)) | HTTP 200 everywhere, and E11's scan of the version (`scripts/docs-render.py --version v<version> --pages all`) finds nothing | Blocking after deployment |
+| E11 | The documentation renders correctly | Release readiness builds `doc/pyopenms` of the candidate's revision with the candidate's wheel, as Read the Docs does, and scans every page (`scripts/docs-render.py --html` → `reports/docs-render-pyopenms-local.json`). It then reads the newest Read the Docs build of `latest` for pyOpenMS and OpenMS (state, commit, the pyopenms wheel it installed, Sphinx warnings) and a sample of its pages (`--version latest` → `reports/docs-render-*-latest.json`). On API reference pages a finding is a nanobind object instead of a documented function (`nb_func`), a private module name (`pyopenms._pyopenms_kernel`) or a raw C++ type in a signature; on every page, reST or MyST markup left unrendered outside code (`.. code-block::`, `:param x:`, `>>>`). Getters documented as setters and the other way round, and the share of methods without a description, are reported. E9 does not see any of this: `doc-validate.yml` builds with the pyopenms release from PyPI, and a build whose pages are broken still succeeds (the 3.6.0 API reference: 381 warnings, OpenMS/OpenMS#10599). When the published `latest` was built with another wheel than the candidate's, its part is not run | No finding in the local build or the published sample, and the newest build of `latest` succeeded | Blocking |
 
 #### E4: headline features
 

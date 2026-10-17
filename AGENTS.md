@@ -57,4 +57,6 @@ python3 scripts/pyopenms-api.py snapshot --out <file>                           
 python3 scripts/pyopenms-api.py diff <old> <new> --docs <user_guide> --changelog <CHANGELOG> # D1, D4
 python3 scripts/doc-examples.py --python <venv python> --docs <user_guide> [--baseline <report>]  # D2, D3
 python3 scripts/release-docs-audit.py --openms <OpenMS checkout> --base v<previous>    # A3, E1-E8; release/<previous> before 3.6.0
+python3 scripts/docs-render.py --html <sphinx html dir>                              # E11, a local docs build
+python3 scripts/docs-render.py --project pyopenms --version latest --expect-wheel <version>  # E11, as published
 ```
