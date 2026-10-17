@@ -35,7 +35,8 @@ API reference pages (apidocs/) are scanned for
 
 The check passes when no page has a nanobind, private, rest or cpp finding and, online, the
 build succeeded. When the newest build installed another wheel than --expect-wheel, the
-published pages do not show the candidate, and the check is not run.
+published pages are still judged, for what readers see, and the report says that they do not
+show the candidate (candidate_shown: false): the local build is what covers the candidate.
 
     python3 scripts/docs-render.py --html <build>/html --project pyopenms
     python3 scripts/docs-render.py --project pyopenms --version latest --expect-wheel 3.7.0.dev20261017
