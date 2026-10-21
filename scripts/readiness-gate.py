@@ -321,9 +321,10 @@ def verdict(artifacts):
     folder = artifact(artifacts, prefix="release-readiness-reports-")
     ok, result = job_ok("readiness")
     summary = readiness_rows(folder)
-    if summary is None:
-        row("R", "Release readiness (A3, C, D, E, F6, F11 on Linux x64)", None, f"job {result}; no readiness-summary.md",
-            blocking=True)
+    # Its checks report failures without failing the job, so a failed job means a phase stopped
+    # (install, python, source, docs) and that phase's checks are missing from the summary.
+    row("R", "Release readiness ran every phase", ok,
+        f"job {result}" + ("" if summary is not None else "; no readiness-summary.md"), blocking=True)
     for check, result_text, detail in summary or []:
         ident = check.split()[0]
         if ident == "A2":  # decided below across every lab
