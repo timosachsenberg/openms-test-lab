@@ -38,6 +38,14 @@ Rules that keep the verdict honest:
 
 ## Quick start for an agent
 
+**One commit, unattended:** the
+[Nightly readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/nightly-readiness.yml)
+workflow does steps 1–3 for the nightly built from `openms_sha`: it pins that nightly's
+installers and wheels by URL, runs Release readiness, the release matrix and run 10 against
+them, and ends with a Verdict job (`gate.md`, `gate.json`) that fails unless every automated
+blocking check passed, including A2 across every lab. A schedule starts it for each new
+nightly. Steps 4 and 5 stay with you.
+
 1. **Identify the candidate** (A1, A2): `python3 scripts/resolve_nightly.py wheel` and
    `python3 scripts/resolve_nightly.py desktop`, then read the revisions as described in A2.
 2. **Automated Linux gate**: run the

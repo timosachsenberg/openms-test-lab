@@ -22,6 +22,9 @@ def main():
         import pyopenms as oms
         result['pyopenms'] = oms.__version__
         result['module'] = oms.__file__
+        # A2: the revision the wheel was built from
+        revision = oms.VersionInfo.getRevision()
+        result['revision'] = revision.decode() if isinstance(revision, bytes) else str(revision)
         mass = oms.AASequence.fromString('PEPTIDE').getMonoWeight()
         assert 799 < mass < 800, mass
         spectrum = oms.MSSpectrum()

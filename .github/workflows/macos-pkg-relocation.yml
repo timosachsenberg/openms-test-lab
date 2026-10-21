@@ -30,6 +30,25 @@ on:
       - .github/workflows/macos-pkg-relocation.yml
       - scripts/macos_pkg.py
       - scripts/pkg-relocation.py
+  # Nightly readiness calls this with judge=true, which judges like a dispatch even when the
+  # caller itself runs for a pull request.
+  workflow_call:
+    inputs:
+      candidate:
+        type: string
+        default: nightly
+      previous:
+        type: string
+        default: latest
+      openms_revision:
+        type: string
+        default: ''
+      baseline_revision:
+        type: string
+        default: develop
+      judge:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -39,9 +58,9 @@ env:
   PREVIOUS: ${{ inputs.previous || 'latest' }}
   # On a pull request the CPack probe compares develop with the last develop before
   # OpenMS/OpenMS#8479, which relocates all three apps.
-  OPENMS_REVISION: ${{ github.event_name == 'pull_request' && 'develop' || inputs.openms_revision }}
-  BASELINE_REVISION: ${{ github.event_name == 'pull_request' && '9fdc7a89ab89b175ff076968f932c8b6bb5f1807' || inputs.baseline_revision }}
-  JUDGE: ${{ github.event_name == 'workflow_dispatch' }}
+  OPENMS_REVISION: ${{ github.event_name == 'pull_request' && inputs.judge != true && 'develop' || inputs.openms_revision }}
+  BASELINE_REVISION: ${{ github.event_name == 'pull_request' && inputs.judge != true && '9fdc7a89ab89b175ff076968f932c8b6bb5f1807' || inputs.baseline_revision }}
+  JUDGE: ${{ github.event_name == 'workflow_dispatch' || inputs.judge == true }}
   PYTHONUNBUFFERED: '1'
 
 jobs:
@@ -79,7 +98,7 @@ jobs:
 
   cpack:
     name: CPack · ${{ matrix.label }}
-    if: ${{ github.event_name == 'pull_request' || inputs.openms_revision != '' }}
+    if: ${{ (github.event_name == 'pull_request' && inputs.judge != true) || inputs.openms_revision != '' }}
     runs-on: macos-15
     timeout-minutes: 30
     strategy:

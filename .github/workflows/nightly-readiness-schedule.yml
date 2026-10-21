@@ -1,0 +1,35 @@
+name: Nightly readiness schedule
+
+# Starts Nightly readiness for each new OpenMS nightly, so a verdict for a nightly commit already
+# exists when someone asks whether it can become a release. OpenMS builds its nightly from 01:07
+# UTC; installers and wheels are uploaded by about 04:30 UTC. The run is dispatched with the
+# commit as input, so its name carries the commit like a run started by hand.
+on:
+  schedule:
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  start:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Start Nightly readiness for the newest complete nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(python3 scripts/readiness-gate.py newest)
+          if gh run list -R "$GITHUB_REPOSITORY" --workflow nightly-readiness.yml --limit 50 \
+               --json displayTitle --jq '.[].displayTitle' | grep -qF "$sha"; then
+            echo "Nightly readiness already ran for $sha" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh workflow run nightly-readiness.yml -R "$GITHUB_REPOSITORY" -f openms_sha="$sha" -f stage=nightly
+          echo "Started Nightly readiness for OpenMS $sha" | tee -a "$GITHUB_STEP_SUMMARY"

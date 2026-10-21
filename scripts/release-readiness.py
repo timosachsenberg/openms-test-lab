@@ -54,6 +54,12 @@ def fetch_json(url):
         return json.load(response)
 
 
+def release_tag(version):
+    """OpenMS tags a release v<version> since 3.6.0 and release/<version> before."""
+    major, minor = (int(part) for part in version.split(".")[:2])
+    return f"v{version}" if (major, minor) >= (3, 6) else f"release/{version}"
+
+
 def resolve():
     import resolve_nightly
     spec = os.environ.get("LAB_PYOPENMS_SPEC", "nightly").strip() or "nightly"
@@ -63,7 +69,7 @@ def resolve():
     else:
         candidate = {"spec": spec}
     baseline = os.environ.get("LAB_BASELINE", "").strip() or fetch_json("https://pypi.org/pypi/pyopenms/json")["info"]["version"]
-    state({"candidate": candidate, "baseline": baseline, "baseline_tag": f"release/{baseline}",
+    state({"candidate": candidate, "baseline": baseline, "baseline_tag": release_tag(baseline),
            "openms_package": os.environ.get("LAB_OPENMS_PACKAGE", "nightly")})
     print(json.dumps(state(), indent=2))
 
