@@ -10,12 +10,17 @@ standard (blocking, advisory and human checks, each with an ID), the verdict rul
 commands that produce the evidence. In short:
 
 1. Identify the candidate and its revision (A1, A2).
-2. Run the automated Linux gate: dispatch the **Release readiness** workflow, or run
+2. Run the automated gate: find the **Nightly readiness** run for the revision (the daily
+   schedule starts one per nightly; its name carries the commit) or dispatch it with
+   `openms_sha=<revision>`. It pins that nightly's files, runs steps 2 and 3 below against
+   them, and its Verdict job decides the automated blocking checks: read `gate.md` in the
+   `nightly-readiness-verdict-*` artifact, then each lab's reports for the details.
+   Without it: dispatch the **Release readiness** workflow, or run
    `python3 scripts/release-readiness.py all` on a Linux machine with sudo, and read
    `reports/readiness-summary.md`.
-3. Dispatch the release matrix of the package labs with `debug=false` and read each run's
-   `reports/installed-checks.json`, `topp-tools.json` and `installed-topp-tests.json`, and the
-   `upgrade.json` of macOS pkg relocation (C8).
+3. (Without Nightly readiness) Dispatch the release matrix of the package labs with
+   `debug=false` and read each run's `reports/installed-checks.json`, `topp-tools.json` and
+   `installed-topp-tests.json`, and the `upgrade.json` of macOS pkg relocation (C8).
 4. Do the static (F) and judgement checks (D5, E4).
 5. Copy [readiness/TEMPLATE.md](readiness/TEMPLATE.md) to
    `readiness/<date>-<version>-<candidate>.md`, fill in every checkbox with evidence, and end

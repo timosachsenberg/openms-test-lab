@@ -1,0 +1,205 @@
+name: Nightly readiness
+run-name: Nightly readiness · ${{ inputs.openms_sha || 'newest nightly' }} · ${{ inputs.stage || 'nightly' }}
+
+# The automated part of RELEASE-READINESS.md for one OpenMS commit, unattended: pin the nightly
+# built from that commit (its installers and wheels as exact URLs), run Release readiness, the
+# release matrix of the package labs and macOS pkg relocation against those files, and end with a
+# Verdict job that fails unless every automated blocking check passed (reports/gate.json).
+# The run name carries the commit so the OpenMS release skill can find the verdict for a
+# candidate; nightly-readiness-schedule.yml starts it for every new nightly.
+# A pull request that changes this workflow or its script runs it on the newest nightly.
+on:
+  workflow_dispatch:
+    inputs:
+      openms_sha:
+        description: OpenMS/OpenMS commit whose nightly to test; blank means the newest complete nightly
+        default: ''
+        type: string
+      stage:
+        description: nightly (A3 and E8 advisory) or release (A3 and E8 block)
+        default: nightly
+        type: choice
+        options: [nightly, release]
+  pull_request:
+    paths:
+      - .github/workflows/nightly-readiness.yml
+      - scripts/readiness-gate.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nightly-readiness-${{ inputs.openms_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  resolve:
+    name: Pin the nightly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      candidate: ${{ steps.pin.outputs.candidate }}
+      error: ${{ steps.pin.outputs.error }}
+      exe: ${{ steps.pin.outputs.exe }}
+      pkg: ${{ steps.pin.outputs.pkg }}
+      deb_x64: ${{ steps.pin.outputs.deb_x64 }}
+      deb_arm: ${{ steps.pin.outputs.deb_arm }}
+      wheel_windows: ${{ steps.pin.outputs.wheel_windows }}
+      wheel_macos: ${{ steps.pin.outputs.wheel_macos }}
+      wheel_linux_x64: ${{ steps.pin.outputs.wheel_linux_x64 }}
+      wheel_linux_arm: ${{ steps.pin.outputs.wheel_linux_arm }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Find the nightly files built from the commit
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENMS_SHA: ${{ inputs.openms_sha }}
+          STAGE: ${{ inputs.stage || 'nightly' }}
+        run: python3 scripts/readiness-gate.py resolve
+
+  readiness:
+    name: R · Release readiness
+    needs: resolve
+    uses: ./.github/workflows/release-readiness.yml
+    with:
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_x64 }}
+      openms_package: ${{ needs.resolve.outputs.deb_x64 }}
+      macos_package: ${{ needs.resolve.outputs.pkg }}
+
+  windows-312:
+    name: 1 · Windows 3.12
+    needs: resolve
+    uses: ./.github/workflows/windows-lab.yml
+    with:
+      python_version: '3.12'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_windows }}
+      openms_package: ${{ needs.resolve.outputs.exe }}
+      debug: false
+      report_suffix: -windows-312
+
+  windows-314:
+    name: 2 · Windows 3.14
+    needs: resolve
+    uses: ./.github/workflows/windows-lab.yml
+    with:
+      python_version: '3.14'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_windows }}
+      openms_package: none
+      debug: false
+      report_suffix: -windows-314
+
+  macos-312:
+    name: 3 · macOS 3.12
+    needs: resolve
+    uses: ./.github/workflows/macos-lab.yml
+    with:
+      runner: macos-15
+      python_version: '3.12'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_macos }}
+      openms_package: ${{ needs.resolve.outputs.pkg }}
+      debug: false
+      report_suffix: -macos-312
+
+  macos-314:
+    name: 5 · macOS 3.14
+    needs: resolve
+    uses: ./.github/workflows/macos-lab.yml
+    with:
+      runner: macos-15
+      python_version: '3.14'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_macos }}
+      openms_package: none
+      debug: false
+      report_suffix: -macos-314
+
+  linux-x64:
+    name: 6 · Linux x64 3.12
+    needs: resolve
+    uses: ./.github/workflows/linux-lab.yml
+    with:
+      runner: ubuntu-24.04
+      python_version: '3.12'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_x64 }}
+      openms_package: ${{ needs.resolve.outputs.deb_x64 }}
+      debug: false
+      report_suffix: -linux-x64
+
+  linux-arm:
+    name: 7 · Linux arm64 3.12
+    needs: resolve
+    uses: ./.github/workflows/linux-lab.yml
+    with:
+      runner: ubuntu-24.04-arm
+      python_version: '3.12'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_arm }}
+      openms_package: ${{ needs.resolve.outputs.deb_arm }}
+      debug: false
+      report_suffix: -linux-arm
+
+  linux-2204:
+    name: 8 · Linux 22.04 3.12
+    needs: resolve
+    uses: ./.github/workflows/linux-lab.yml
+    with:
+      runner: ubuntu-22.04
+      python_version: '3.12'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_x64 }}
+      openms_package: none
+      debug: false
+      report_suffix: -linux-2204
+
+  linux-314:
+    name: 9 · Linux x64 3.14
+    needs: resolve
+    uses: ./.github/workflows/linux-lab.yml
+    with:
+      runner: ubuntu-24.04
+      python_version: '3.14'
+      pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_x64 }}
+      openms_package: none
+      debug: false
+      report_suffix: -linux-314
+
+  pkg-relocation:
+    name: 10 · macOS pkg relocation
+    needs: resolve
+    uses: ./.github/workflows/macos-pkg-relocation.yml
+    with:
+      candidate: ${{ needs.resolve.outputs.pkg }}
+      previous: latest
+      judge: true
+
+  verdict:
+    name: Verdict
+    needs: [resolve, readiness, windows-312, windows-314, macos-312, macos-314,
+            linux-x64, linux-arm, linux-2204, linux-314, pkg-relocation]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Download every lab's reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: labs
+      - name: Decide the automated blocking checks
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          STAGE: ${{ inputs.stage || 'nightly' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/readiness-gate.py verdict --artifacts labs
+      - name: Upload the verdict
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-readiness-verdict-${{ github.run_id }}
+          path: |
+            reports/gate.json
+            reports/gate.md
+          retention-days: 30
