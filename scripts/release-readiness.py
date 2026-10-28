@@ -58,9 +58,9 @@ def fetch_json(url):
 
 
 def release_tag(version):
-    """The git tag of an OpenMS release: v<version> from 3.6.0 on, release/<version> before."""
-    numbers = tuple(int(part) for part in version.split(".")[:3])
-    return f"v{version}" if numbers >= (3, 6, 0) else f"release/{version}"
+    """OpenMS tags a release v<version> since 3.6.0 and release/<version> before."""
+    major, minor = (int(part) for part in version.split(".")[:2])
+    return f"v{version}" if (major, minor) >= (3, 6) else f"release/{version}"
 
 
 def resolve():

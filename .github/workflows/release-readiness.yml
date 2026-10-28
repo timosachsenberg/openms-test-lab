@@ -35,6 +35,24 @@ on:
         description: Upstream TOPP tests to run on the installation; all, release-gate, or a regex
         default: all
         type: string
+  # Nightly readiness calls this with the exact files of one nightly.
+  workflow_call:
+    inputs:
+      pyopenms_spec:
+        type: string
+        default: nightly
+      openms_package:
+        type: string
+        default: nightly
+      macos_package:
+        type: string
+        default: nightly
+      baseline:
+        type: string
+        default: ''
+      topp_test_selection:
+        type: string
+        default: all
 
 permissions:
   contents: read
