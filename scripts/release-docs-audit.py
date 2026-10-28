@@ -259,10 +259,13 @@ def check_changelog(heading, section):
         seen[key] = True
     # A continuation line that starts in lower case right after a line that closed a sentence
     # is usually the tail of an edited bullet left behind, e.g. "the registry check (#10216)."
+    # A sentence may start with a parameter or option name, which stays in lower case
+    # ("preprocessing:window_mower:movetype 'jump' reproduces ... (#10526).").
     orphan_lines, previous = [], ""
     for line in section.splitlines():
         stripped = line.strip()
         if (re.match(r"^\s{4,}[a-z]", line) and not stripped.startswith("- ")
+                and not re.search(r"[:_]", stripped.split()[0])
                 and re.search(r"(\.|\.\)|\(#\d+(, #\d+)*\)\.)$", previous.strip())
                 and re.search(r"\(#\d+(, #\d+)*\)\.?$", stripped)):
             orphan_lines.append(stripped[:120])
