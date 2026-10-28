@@ -443,6 +443,18 @@ class Replay:
             elif name == "foreach":
                 end = matching(commands, i, "foreach", "endforeach")
                 words = self.arguments(args)
+                if "IN" in words and words[words.index("IN") + 1:][:1] == ["ZIP_LISTS"]:
+                    # foreach(<var>... IN ZIP_LISTS <list>...): one variable per list, or <var>_<N>
+                    k = words.index("IN")
+                    names, lists = words[:k], [split_list(self.vars.get(w, "")) for w in words[k + 2:]]
+                    names = names if len(names) == len(lists) else [f"{names[0]}_{n}" for n in range(len(lists))]
+                    self.loop_variables.update(names)
+                    for index in range(max((len(values) for values in lists), default=0)):
+                        for loop_name, values in zip(names, lists):
+                            self.assign(loop_name, values[index] if index < len(values) else None)
+                        self.execute(commands[i + 1:end])
+                    i = end + 1
+                    continue
                 variable, items = words[0], words[1:]
                 if items[:1] == ["RANGE"]:
                     bounds = [int(x) for x in items[1:]]
@@ -528,6 +540,9 @@ class Replay:
             current = [c for c in current if c not in items]
         elif operation == "REMOVE_DUPLICATES":
             current = list(dict.fromkeys(current))
+        elif operation == "REMOVE_AT":
+            drop = {int(k) % len(current) for k in items} if current else set()
+            current = [c for n, c in enumerate(current) if n not in drop]
         elif operation == "LENGTH":
             return self.assign(items[0], str(len(current)))
         elif operation == "GET":
@@ -548,6 +563,9 @@ class Replay:
             self.assign(words[4], re.sub(words[2], replacement, "".join(words[5:])))
         elif words[0] in ("TOLOWER", "TOUPPER"):
             self.assign(words[2], words[1].lower() if words[0] == "TOLOWER" else words[1].upper())
+        elif words[0] == "MAKE_C_IDENTIFIER":
+            identifier = re.sub(r"[^A-Za-z0-9_]", "_", words[1])
+            self.assign(words[2], "_" + identifier if identifier[:1].isdigit() else identifier)
         else:
             self.notes.append(f"{where}: string({words[0]}) is not replayed")
 
@@ -656,7 +674,8 @@ class Replay:
     def do_add_test(self, args, where):
         self.missing = set()
         words = self.arguments(args)
-        test = {"depends": [], "will_fail": False, "pass_regex": None, "fail_regex": None, "skip_regex": None,
+        test = {"depends": [], "fixtures_setup": [], "fixtures_required": [], "will_fail": False,
+                "pass_regex": None, "fail_regex": None, "skip_regex": None,
                 "skip_code": None, "timeout": None, "environment": [], "source": where,
                 "working_directory": self.vars["CMAKE_CURRENT_BINARY_DIR"]}
         if words[:1] == ["NAME"]:
@@ -688,6 +707,8 @@ class Replay:
             for key, value in zip(words[k + 1::2], words[k + 2::2]):
                 if key == "DEPENDS":
                     test["depends"] += split_list(value)
+                elif key in ("FIXTURES_SETUP", "FIXTURES_REQUIRED"):
+                    test[key.lower()] = split_list(value)
                 elif key == "WILL_FAIL":
                     test["will_fail"] = constant(value) is True
                 elif key in ("PASS_REGULAR_EXPRESSION", "FAIL_REGULAR_EXPRESSION", "SKIP_REGULAR_EXPRESSION"):
@@ -835,6 +856,18 @@ def package_configuration(bin_dir, share):
 # ------------------------------------------------------------------------------------------
 # Running the tests
 # ------------------------------------------------------------------------------------------
+def require_fixtures(tests, order):
+    """A test with FIXTURES_REQUIRED runs after the tests that set its fixtures up, and ctest
+    adds them when it is selected: here they become DEPENDS, which do both."""
+    setup = {}
+    for name in order:
+        for fixture in tests[name]["fixtures_setup"]:
+            setup.setdefault(fixture, []).append(name)
+    for name in order:
+        for fixture in tests[name]["fixtures_required"]:
+            tests[name]["depends"] += [s for s in setup.get(fixture, []) if s != name and s not in tests[name]["depends"]]
+
+
 def select(tests, order, pattern):
     chosen = {n for n in order if re.search(pattern, n)}
     changed = True
@@ -870,8 +903,9 @@ def posix_shell(name):
 
 
 def any_match(patterns, text):
-    """ctest's regular-expression properties are lists; one matching element is enough."""
-    return any(re.search(p, text) for p in patterns)
+    """ctest's regular-expression properties are lists; one matching element is enough. In
+    CMake's regular expressions '.' matches a newline too, so a '.*' spans lines."""
+    return any(re.search(p, text, re.DOTALL) for p in patterns)
 
 
 def tracked_files(openms):
@@ -1092,6 +1126,7 @@ def main():
         excluded.update(replay.excluded)
         notes += replay.notes
 
+    require_fixtures(tests, order)
     pattern = {"release-gate": RELEASE_GATE, "all": "."}.get(args.select, args.select)
     chosen = select(tests, order, pattern)
     not_registered = [n for n in excluded if n not in tests and re.search(pattern, n)]
