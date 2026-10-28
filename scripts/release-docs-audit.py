@@ -19,7 +19,7 @@ Checks, named as in RELEASE-READINESS.md:
   DOC-CMAKE-OPTIONS   CMake options added since the base release are documented, and removed
                       ones are no longer documented
   DOC-ENV-VARS        environment variables the code reads are documented somewhere
-  CHANGELOG-LINT      the release section has no duplicated or orphaned bullet text
+  CHANGELOG-LINT      the release section has no duplicated or orphaned bullet text, and each section once
   VERSION-STRINGS     every file that carries the release version agrees
 
 Each check reports what it found; RELEASE-READINESS.md decides which findings block a release.
@@ -270,9 +270,13 @@ def check_changelog(heading, section):
                 and re.search(r"\(#\d+(, #\d+)*\)\.?$", stripped)):
             orphan_lines.append(stripped[:120])
         previous = line if stripped else ""
+    # Each section ("OpenMS Library:", "TOPP tools:", ...) once per release; a second one is
+    # usually what a merge left behind, and its entries are missed where readers look.
+    headings = [line.strip() for line in section.splitlines() if re.match(r"^[A-Z][\w ]*:$", line)]
+    repeated = sorted({h for h in headings if headings.count(h) > 1})
     return {"heading": heading.strip(), "under_development": "under development" in heading.lower(),
             "bullets": len(texts), "duplicated_bullets": duplicated,
-            "suspicious_short_continuation_lines": orphan_lines}
+            "suspicious_short_continuation_lines": orphan_lines, "repeated_sections": repeated}
 
 
 def check_versions(repo, expected):
@@ -359,7 +363,7 @@ def main():
     print(f"DOC-ENV-VARS        undocumented {undocumented_env}")
     cl = report["CHANGELOG-LINT"]
     print(f"CHANGELOG-LINT      '{cl['heading']}': {cl['bullets']} bullets, {len(cl['duplicated_bullets'])} duplicated, "
-          f"{len(cl['suspicious_short_continuation_lines'])} orphaned lines")
+          f"{len(cl['suspicious_short_continuation_lines'])} orphaned lines, sections twice: {cl['repeated_sections']}")
     print(f"VERSION-STRINGS     expected {version}; mismatched {versions['mismatched']}")
     print(f"report: {args.report}")
 

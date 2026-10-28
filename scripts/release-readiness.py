@@ -305,8 +305,10 @@ def summary():
         env_missing = [n for n, v in audit["DOC-ENV-VARS"].items() if not v["documented"]]
         row("E7 environment variables documented", not env_missing, f"{env_missing}")
         cl = audit["CHANGELOG-LINT"]
-        row("E8 CHANGELOG clean", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]),
-            f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}")
+        row("E8 CHANGELOG clean", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]
+                                       or cl.get("repeated_sections")),
+            f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}"
+            f"; sections twice {cl.get('repeated_sections', [])}")
         row("A3 version strings agree", not audit["VERSION-STRINGS"]["mismatched"],
             f"expected {audit['VERSION-STRINGS']['expected']}; mismatched {audit['VERSION-STRINGS']['mismatched']}")
     def library_list(report):
