@@ -47,6 +47,9 @@ on:
       macos_package:
         type: string
         default: nightly
+      container_image:
+        type: string
+        default: none
       baseline:
         type: string
         default: ''

@@ -41,10 +41,13 @@ Rules that keep the verdict honest:
 **One commit, unattended:** the
 [Nightly readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/nightly-readiness.yml)
 workflow does steps 1–3 for the nightly built from `openms_sha`: it pins that nightly's
-installers and wheels by URL, runs Release readiness, the release matrix and run 10 against
-them, and ends with a Verdict job (`gate.md`, `gate.json`) that fails unless every automated
-blocking check passed, including A2 across every lab. A schedule starts it for each new
-nightly. Steps 4 and 5 stay with you.
+installers and wheels by URL and the nightly container image by digest, runs Release readiness
+(with C10 on x64 and E11), the release matrix (with C6 on both DEBs and C9 on every platform),
+run 10 and the Container lab on arm64 (run 11) against them, and ends with a Verdict job
+(`gate.md`, `gate.json`) that fails unless every automated blocking check passed, including A2
+across every lab. C10 counts only when the image was built from `openms_sha`: the image tag
+`latest` moves with every nightly. A schedule starts it for each new nightly. Steps 4 and 5
+stay with you.
 
 1. **Identify the candidate** (A1, A2): `python3 scripts/resolve_nightly.py wheel` and
    `python3 scripts/resolve_nightly.py desktop`, then read the revisions as described in A2.

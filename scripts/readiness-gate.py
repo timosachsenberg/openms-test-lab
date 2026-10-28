@@ -45,15 +45,18 @@ WHEELS = {"windows": lambda tag: tag == "win_amd64",
 
 # RELEASE-READINESS.md: checks that block, and those that block only at release. Rows whose ID is
 # not listed (advisory checks, and sub-checks such as E4b) are reported without blocking.
-BLOCKING = {"A1", "A2", "C1", "C2", "C3", "C5", "C6", "D1", "D2", "D5", "D6", "E2", "E4", "E9",
+BLOCKING = {"A1", "A2", "C1", "C2", "C3", "C5", "C6", "C9", "D1", "D2", "D5", "D6", "E2", "E4", "E9", "E11",
             "F1", "F2", "F5", "F6", "F7", "F8", "F11"}
 AT_RELEASE = {"A3", "E8"}
 # Every check of readiness/TEMPLATE.md, to name the ones a run left to the readiness report.
 STANDARD = (["A1", "A2", "A3", "B1", "B2", "B3", "B5", "B6", "B7", "B8", "B9"]
-            + [f"C{i}" for i in range(1, 9)] + [f"D{i}" for i in range(1, 7)] + [f"E{i}" for i in range(1, 11)]
+            + [f"C{i}" for i in range(1, 11)] + [f"D{i}" for i in range(1, 7)] + [f"E{i}" for i in range(1, 12)]
             + [f"F{i}" for i in range(1, 12)] + [f"G{i}" for i in range(1, 10)] + [f"H{i}" for i in range(1, 5)])
 # What the per-platform row of a lab that installs the desktop package decides (installed-checks.py).
-DESKTOP_CHECKS = {"C1", "C2", "C3", "C5", "F6"}
+DESKTOP_CHECKS = {"C1", "C2", "C3", "C5", "C9", "F6"}
+# The nightly container image (C10): built from the nightly branch like the installers, but under the
+# moving tag latest, so resolve pins its digest and the verdict checks the revision it was built from.
+IMAGE = "ghcr.io/openms/openms-tools-thirdparty"
 
 # The release matrix for 3.6 (RELEASE-READINESS.md): job id, check, run, platform whose installed
 # desktop package the run checks (None for wheel-only runs).
@@ -155,6 +158,27 @@ def pin_wheels(version_suffix):
     return pinned
 
 
+def pin_container(notes):
+    """The digest the nightly image tag points at now, or none (C10 is advisory: no reason to stop)."""
+    repository = IMAGE.split("/", 1)[1]
+    accept = ", ".join(f"application/vnd.{kind}" for kind in (
+        "oci.image.index.v1+json", "docker.distribution.manifest.list.v2+json",
+        "oci.image.manifest.v1+json", "docker.distribution.manifest.v2+json"))
+    try:
+        with urllib.request.urlopen(f"https://ghcr.io/token?scope=repository:{repository}:pull", timeout=60) as response:
+            token = json.load(response)["token"]
+        request = urllib.request.Request(f"https://ghcr.io/v2/{repository}/manifests/latest", method="HEAD",
+                                         headers={"Authorization": f"Bearer {token}", "Accept": accept})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            digest = response.headers["Docker-Content-Digest"]
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest or ""):
+            raise ValueError(f"unexpected digest {digest!r}")
+    except (OSError, KeyError, ValueError) as error:
+        notes.append(f"C10: cannot pin {IMAGE}:latest ({error}); the container image is not checked")
+        return "none"
+    return f"{IMAGE}@{digest}"
+
+
 def output(values):
     if not os.environ.get("GITHUB_OUTPUT"):
         return
@@ -192,6 +216,7 @@ def resolve():
         version_suffix = ".dev" + wheel_day.replace("-", "")
         installers = pin_installers(folder)
         wheel_files = pin_wheels(version_suffix)
+        container = pin_container(notes)
     except Unpinnable as error:
         (REPORTS / "candidate.json").write_text(json.dumps({"requested": wanted, "error": str(error)}, indent=2),
                                                 encoding="utf-8")
@@ -201,13 +226,14 @@ def resolve():
         return 1
     candidate = {"sha": sha, "stage": stage, "nightly_date": folder, "wheel_version": version_suffix[1:],
                  "release_run": build["html_url"], "wheel_run": wheel_run["html_url"],
-                 "installers": installers, "wheels": wheel_files, "notes": notes}
+                 "installers": installers, "wheels": wheel_files, "container_image": container, "notes": notes}
     (REPORTS / "candidate.json").write_text(json.dumps(candidate, indent=2), encoding="utf-8")
     output({"sha": sha, "nightly_date": folder, "candidate": json.dumps(candidate, separators=(",", ":")),
             "exe": installers["windows"], "pkg": installers["macos"],
             "deb_x64": installers["linux_x64"], "deb_arm": installers["linux_arm"],
             "wheel_windows": wheel_files["windows"], "wheel_macos": wheel_files["macos"],
-            "wheel_linux_x64": wheel_files["linux_x64"], "wheel_linux_arm": wheel_files["linux_arm"]})
+            "wheel_linux_x64": wheel_files["linux_x64"], "wheel_linux_arm": wheel_files["linux_arm"],
+            "container_image": container})
     files = "\n".join(f"- `{url.split('#')[0].rsplit('/', 1)[-1]}`" for url in [*installers.values(), *wheel_files.values()])
     summarize(f"### Nightly readiness: OpenMS `{sha[:10]}`, nightly {folder}\n\n"
               f"[installers built]({build['html_url']}) · [wheels built]({wheel_run['html_url']}) · stage `{stage}`\n\n"
@@ -256,6 +282,8 @@ def desktop_detail(folder, checks):
     elif checks.get("upstream_tests"):
         parts.append(f"C3 {checks['upstream_tests']}: {short(checks.get('reason', ''), 120)}")
     parts.append(f"C5 Thermo {(checks.get('thermo') or {}).get('status', '?')}")
+    openmp = checks.get("openmp") or {}
+    parts.append(f"C9 OpenMP {openmp.get('openmp') or openmp.get('status', '?')}")
     parts.append(f"F6 exit {checks.get('bundled_libs_exit')}")
     return "; ".join(parts)
 
@@ -315,8 +343,14 @@ def verdict(artifacts):
             if checks and checks.get("commit"):
                 revisions.append((f"{platform} installer", checks["commit"]))
             status = (checks or {}).get("status")
-            row("C", f"Installed desktop package on {platform} (C1–C3, C5, F6)",
+            row("C", f"Installed desktop package on {platform} (C1–C3, C5, C9, F6)",
                 {"passed": True, "failed": False}.get(status), desktop_detail(folder, checks), blocking=True)
+        if platform and platform.startswith("Linux"):
+            deb = load(folder, "deb-distributions.json")
+            row("C6", f"The DEB installs where it claims to ({platform})",
+                {"passed": True, "failed": False}.get((deb or {}).get("status")),
+                "no deb-distributions.json" if deb is None else "; ".join(
+                    f"{d['image']} {d['expect']}: {d['status']}" for d in deb.get("distributions", [])))
 
     folder = artifact(artifacts, prefix="release-readiness-reports-")
     ok, result = job_ok("readiness")
@@ -327,7 +361,7 @@ def verdict(artifacts):
         f"job {result}" + ("" if summary is not None else "; no readiness-summary.md"), blocking=True)
     for check, result_text, detail in summary or []:
         ident = check.split()[0]
-        if ident == "A2":  # decided below across every lab
+        if ident in ("A2", "C10"):  # decided below: across every lab, and against the image's revision
             continue
         row(ident, f"{check[len(ident):].strip()} (release readiness)", {"PASS": True, "FAIL": False}.get(result_text),
             detail)
@@ -345,6 +379,23 @@ def verdict(artifacts):
         other = [f"{where} {rev[:10]}" for where, rev in revisions if not (sha.startswith(rev) or rev.startswith(sha))]
         row("A2", "All artifacts come from one revision", not other,
             f"{len(revisions)} revisions checked against {sha[:10]}" + (f"; different: {', '.join(other)}" if other else ""))
+
+    def container_row(platform, report, job):
+        name = f"The container image works like an installed package ({platform})"
+        if report is None:
+            image = candidate.get("container_image")
+            return row("C10", name, None, "image not pinned" if image in (None, "none") else f"no container-checks.json "
+                       f"(job {job_ok(job)[1]})")
+        revision = ((report.get("installed") or {}).get("revision") or "").lower()
+        if sha and revision and not (sha.startswith(revision) or revision.startswith(sha)):
+            return row("C10", name, None, f"{report.get('digest') or report.get('image')} was built from "
+                       f"{revision[:10]}, not from the candidate")
+        row("C10", name, {"passed": True, "failed": False}.get(report.get("status")),
+            f"{report.get('digest') or report.get('image')}, revision {revision[:10] or '?'}: "
+            + "; ".join(f"{step} {report[step]['status']}" for step in ("pristine", "installed", "options") if step in report))
+
+    container_row("x64, release readiness", load(folder, "container-checks.json"), "readiness")
+    container_row("arm64", load(artifact(artifacts, job="container-arm"), "container-checks.json"), "container-arm")
 
     ok, result = job_ok("pkg-relocation")
     row("C8", "A macOS upgrade installs the apps into the candidate's folder (run 10)", ok,
