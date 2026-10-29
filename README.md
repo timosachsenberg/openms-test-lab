@@ -9,6 +9,7 @@ This repository was previously named `windows-test-lab`. All links and runner pa
 | Windows | [Windows package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/windows-lab.yml) |
 | macOS (Apple Silicon or Intel) | [macOS package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/macos-lab.yml) |
 | Linux (x64 or ARM64) | [Linux package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/linux-lab.yml) |
+| Container images (x64 or ARM64) | [Container lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/container-lab.yml): a `ghcr.io/openms/openms-*` image checked like an installed package (`scripts/container-checks.py`, check C10) |
 
 See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inputs, SSH, exports and dependency reports. The sections below describe Windows.
 
@@ -16,7 +17,7 @@ See [macOS and Linux instructions](UNIX-LABS.md) for runner choices, package inp
 
 **Making a release:** [RELEASE-PROCESS.md](RELEASE-PROCESS.md) walks through every step from preparing `develop` to the announcement, and names the checks that gate each one.
 
-**Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
+**Deciding whether a nightly can become a release:** [RELEASE-READINESS.md](RELEASE-READINESS.md) is the quality standard and the procedure — packaging, every installed tool, upstream TOPP tests on the installation, the pyOpenMS API and user guide against the previous release, documentation coverage and rendering, static artifact checks, release mechanics and the checks that need a person — each with an ID, a pass criterion and whether it blocks. [Release readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/release-readiness.yml) runs its automated Linux part in one go. Reports live in [readiness/](readiness/); agents start at [AGENTS.md](AGENTS.md).
 
 **Gating one commit unattended:** [Nightly readiness](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/nightly-readiness.yml) pins the nightly built from one OpenMS commit (its four installers and four wheels as exact URLs, input `openms_sha`), runs Release readiness, the release matrix of the package labs and macOS pkg relocation against those files, and ends with a **Verdict** job that fails unless every automated blocking check passed. The verdict is in the run summary and in the `nightly-readiness-verdict-*` artifact (`gate.json`, `gate.md`). The run name carries the commit, so the OpenMS release skill finds the verdict for its candidate; [Nightly readiness schedule](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/nightly-readiness-schedule.yml) starts a run for every new nightly at 05:30 UTC. With `stage=release`, A3 and E8 block as well. Judgement and human checks still belong in the readiness report.
 
@@ -140,11 +141,25 @@ Desktop package checks:
   writes spectra and the in-process one writes as many. On Windows this uses the PATH a new login
   session gets from the installer. When `DOTNET_ROOT` is unset, it is pointed at the .NET the PATH
   leads to, because the in-process reader does not search the PATH for it (the macOS runners keep
-  .NET in `~/.dotnet`).
+  .NET in `~/.dotnet`);
+- the default reader also converts the file through a symbolic link with a name of its own, the
+  way Nextflow and Galaxy stage inputs, and the run fails unless it writes as many spectra and
+  the mzML's `sourceFile` carries the link's name, as the same reader writes the real file's
+  (OpenMS/OpenMS#10451). Where the runner may not
+  create symbolic links, that part is recorded as not run;
+- `OpenMSInfo` reports `OpenMP : enabled`; a build that found no OpenMP runtime runs
+  single-threaded whatever `-threads` says (OpenMS/OpenMS#10326).
 
 These run in one step, `scripts/installed-checks.py`, which writes `installed-checks.json` (with
-the Thermo results under `thermo`), `topp-tools.json`, `installed-topp-tests.json` and
-`bundled-libs.json`.
+the Thermo results under `thermo` and OpenMP under `openmp`), `topp-tools.json`,
+`installed-topp-tests.json` and `bundled-libs.json`.
+
+The Linux lab then installs the same DEB in clean containers of every distribution the
+installation page names (Ubuntu 24.04 and 26.04, Debian 13), checks that every ELF file of the
+package resolves its libraries, that no link dangles and that `FileInfo`, `OpenMSInfo` and
+`TOPPView --help` start, and checks that Ubuntu 22.04 and Debian 12 refuse it for its glibc
+floor (`scripts/deb-distributions.py` → `deb-distributions.json`, check C6). The runner itself
+is the build distribution, the one place where the DEB's dependency names are sure to exist.
 
 Inventory collected for every run, to make a later diff meaningful:
 

@@ -49,6 +49,7 @@ jobs:
       wheel_macos: ${{ steps.pin.outputs.wheel_macos }}
       wheel_linux_x64: ${{ steps.pin.outputs.wheel_linux_x64 }}
       wheel_linux_arm: ${{ steps.pin.outputs.wheel_linux_arm }}
+      container_image: ${{ steps.pin.outputs.container_image }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -69,6 +70,7 @@ jobs:
       pyopenms_spec: ${{ needs.resolve.outputs.wheel_linux_x64 }}
       openms_package: ${{ needs.resolve.outputs.deb_x64 }}
       macos_package: ${{ needs.resolve.outputs.pkg }}
+      container_image: ${{ needs.resolve.outputs.container_image || 'none' }}
 
   windows-312:
     name: 1 · Windows 3.12
@@ -173,10 +175,22 @@ jobs:
       previous: latest
       judge: true
 
+  # C10 for arm64; Release readiness checks the same image digest on x64. The verdict counts it
+  # only if the image was built from the candidate's commit (the tag latest moves every night).
+  container-arm:
+    name: 11 · Container arm64
+    needs: resolve
+    if: ${{ needs.resolve.outputs.container_image != '' && needs.resolve.outputs.container_image != 'none' }}
+    uses: ./.github/workflows/container-lab.yml
+    with:
+      image: ${{ needs.resolve.outputs.container_image }}
+      runner: ubuntu-24.04-arm
+      report_suffix: -container-arm
+
   verdict:
     name: Verdict
     needs: [resolve, readiness, windows-312, windows-314, macos-312, macos-314,
-            linux-x64, linux-arm, linux-2204, linux-314, pkg-relocation]
+            linux-x64, linux-arm, linux-2204, linux-314, pkg-relocation, container-arm]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15

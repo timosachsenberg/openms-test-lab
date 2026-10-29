@@ -120,6 +120,15 @@ def release_section(changelog, version):
     return text[start.end(): start.end() + end.start()] if end else text[start.end():]
 
 
+def grouped_names(notes):
+    """Names a CHANGELOG gives in short form, "The ConsensusIDAlgorithm classes (Average, Best, ...)":
+    the common prefix once, then the rest of each name in parentheses."""
+    names = set()
+    for prefix, items in re.findall(r"\b([A-Z]\w+)\s+(?:classes|functions|tools)\s*\(([^)]*)\)", notes):
+        names |= {prefix + item for item in re.findall(r"\b([A-Z]\w*)\b", items)}
+    return names
+
+
 def diff(old_path, new_path, docs, out, changelog=None):
     old = json.loads(Path(old_path).read_text(encoding="utf-8"))
     new = json.loads(Path(new_path).read_text(encoding="utf-8"))
@@ -155,9 +164,10 @@ def diff(old_path, new_path, docs, out, changelog=None):
         release = re.match(r"\d+\.\d+\.\d+", new["version"]).group(0)
         notes = release_section(changelog, release)
         result["changelog_release"] = release
+        grouped = grouped_names(notes)
         result["removed_names_not_in_changelog"] = [
             name for name in removed if o[name]["kind"] in ("class", "function", "singleton")
-            and not re.search(rf"\b{re.escape(name)}\b", notes)]
+            and name not in grouped and not re.search(rf"\b{re.escape(name)}\b", notes)]
 
     if docs:
         pages = sorted(Path(docs).rglob("*.rst"))

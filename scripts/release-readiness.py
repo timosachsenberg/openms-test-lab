@@ -5,14 +5,17 @@ own Linux sandbox (it needs sudo/root for apt). Every phase writes JSON under re
 RELEASE-READINESS.md says how each result is judged.
 
     python3 scripts/release-readiness.py all                  # nightly wheel + nightly DEB
-    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=release/3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
+    LAB_PYOPENMS_SPEC=pyopenms==3.6.0 LAB_OPENMS_PACKAGE=v3.6.0 LAB_MACOS_PACKAGE=v3.6.0 \\
+        LAB_CONTAINER_IMAGE=ghcr.io/openms/openms-tools-thirdparty:3.6.0 \\
         python3 scripts/release-readiness.py all              # a release candidate
 
 Phases, in order (each can also be run alone):
 
   resolve   pick the candidate wheel and DEB, and the previous release as baseline
-  desktop   install the DEB, start every tool, run upstream TOPP tests (installed-checks.py)
+  desktop   install the DEB, start every tool, run upstream TOPP tests (installed-checks.py),
+            then install it on every documented distribution (deb-distributions.py)
   pkg       F11: what the candidate's macOS .pkg lets the Installer relocate (macos_pkg.py)
+  container C10: the container image, checked like an installed package (container-checks.py)
   python    candidate and baseline pyOpenMS in separate venvs, public API snapshot of each
   source    the OpenMS sources of the candidate's revision, plus the baseline release tag
   docs      user-guide examples on baseline and candidate, API diff, source docs audit
@@ -78,7 +81,8 @@ def desktop():
     env = dict(os.environ, LAB_OPENMS_PACKAGE=os.environ.get("LAB_OPENMS_PACKAGE", "nightly"))
     run([sys.executable, ROOT / "scripts/unix-lab.py", "native"], env=env)
     result = run([sys.executable, ROOT / "scripts/installed-checks.py"], check=False)
-    state({"desktop_exit": result.returncode})
+    distributions = run([sys.executable, ROOT / "scripts/deb-distributions.py"], check=False)
+    state({"desktop_exit": result.returncode, "deb_distributions_exit": distributions.returncode})
 
 
 def pkg():
@@ -86,6 +90,12 @@ def pkg():
     result = run([sys.executable, ROOT / "scripts/macos_pkg.py", selection, "--report", REPORTS / "macos-pkg.json"],
                  check=False, stdout=subprocess.DEVNULL)
     state({"macos_package": selection, "macos_pkg_exit": result.returncode})
+
+
+def container():
+    image = os.environ.get("LAB_CONTAINER_IMAGE", "").strip() or "ghcr.io/openms/openms-tools-thirdparty:latest"
+    result = run([sys.executable, ROOT / "scripts/container-checks.py", "--image", image], check=False)
+    state({"container_image": image, "container_exit": result.returncode})
 
 
 def venv(name, requirement):
@@ -119,7 +129,10 @@ def python_phase():
         merged["libraries"] += data_part["libraries"]
         merged["blocking"] += data_part["blocking"]
     (REPORTS / "bundled-libs-wheel.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
-    state({"python_candidate": str(candidate), "python_baseline": str(baseline), "wheel_revision": revision})
+    version = run([candidate, "-c", "import pyopenms; print(pyopenms.__version__)"],
+                  capture_output=True, text=True).stdout.strip()
+    state({"python_candidate": str(candidate), "python_baseline": str(baseline), "wheel_revision": revision,
+           "wheel_version": version})
 
 
 def source():
@@ -157,6 +170,26 @@ def docs():
          "--out", REPORTS / "pyopenms-api-diff.json"])
     run([sys.executable, ROOT / "scripts/release-docs-audit.py", "--openms", SRC, "--base", data["baseline_tag"],
          "--report", REPORTS / "docs-audit.json"], check=False)
+    rendered_docs(data)
+
+
+def rendered_docs(data):
+    """E11: the pyOpenMS documentation built from the candidate's sources with the candidate's
+    wheel, as Read the Docs builds it, then the published `latest` of both projects."""
+    python, html = data["python_candidate"], WORK / "pyopenms-html"
+    source = SRC / "doc/pyopenms/docs"
+    run([python, "-m", "pip", "install", "-q", "-r", source / "requirements.txt"], check=False)
+    with open(REPORTS / "pyopenms-sphinx.log", "w", encoding="utf-8") as log:
+        built = run([python, "-m", "sphinx", "-b", "html", "-j", "auto", "-q", source / "source", html], check=False,
+                    stdout=log, stderr=subprocess.STDOUT)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--html", html, "--sphinx-log", REPORTS / "pyopenms-sphinx.log",
+         "--report", REPORTS / "docs-render-pyopenms-local.json"], check=False)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--project", "pyopenms", "--version", "latest",
+         *(["--expect-wheel", data["wheel_version"]] if data.get("wheel_version") else []),
+         "--report", REPORTS / "docs-render-pyopenms-latest.json"], check=False)
+    run([sys.executable, ROOT / "scripts/docs-render.py", "--project", "openms", "--version", "latest",
+         "--report", REPORTS / "docs-render-openms-latest.json"], check=False)
+    state({"pyopenms_docs_build_exit": built.returncode})
 
 
 def load(name):
@@ -183,6 +216,54 @@ def summary():
         "no report" if upstream is None else
         f"{upstream['summary']} of {upstream['selected']} selected; {upstream.get('not_registered', 0)} not "
         f"registered for this package; replay notes: {upstream.get('replay_notes') or 'none'}")
+    checks = load("installed-checks.json") or {}
+    thermo = checks.get("thermo")
+    runs = [f"{mode}: exit {thermo[mode]['exit']}, {thermo[mode]['spectra']} spectra" for mode in
+            ("default", "inprocess", "symlink") if thermo and "exit" in thermo.get(mode, {})]
+    if thermo and thermo.get("symlink", {}).get("status") == "not run":
+        runs.append(f"symlink not run: {thermo['symlink']['reason']}")
+    row("C5 Thermo reader: default, in-process, through a symbolic link",
+        None if not thermo or thermo["status"] == "skipped" else thermo["status"] == "passed",
+        "; ".join(runs) or (thermo or {}).get("reason", "no report"))
+    distributions = load("deb-distributions.json")
+    row("C6 the DEB installs on every documented distribution, and is refused where documented",
+        None if distributions is None or distributions["status"] in ("skipped", "not run")
+        else distributions["status"] == "passed",
+        "no report" if distributions is None else "; ".join(
+            f"{d['image']} {d['expect']}: {d['status']}" + ("" if d["status"] == "passed" else
+                                                            f" ({d.get('reason') or ', '.join(d.get('problems', []))})")
+            for d in distributions.get("distributions", [])) or distributions.get("reason", ""))
+    openmp = checks.get("openmp")
+    row("C9 the package parallelizes with OpenMP", None if openmp is None else openmp["status"] == "passed",
+        "no report" if openmp is None else f"OpenMSInfo: OpenMP {openmp.get('openmp') or openmp.get('reason')}")
+    image = load("container-checks.json")
+    if image is not None:
+        differ = image.get("options", {}).get("differ") or {}
+        row("C10 the container image passes the installed checks", None if image["status"] == "not run"
+            else image["status"] == "passed",
+            f"{image.get('digest') or image['image']}, revision {(image.get('installed', {}).get('revision') or '?')[:7]}: "
+            + "; ".join(f"{step} {image[step]['status']}" for step in ("pristine", "installed", "options") if step in image)
+            + "".join(f"; {name}={d['image']}, installers {d['installers']}" for name, d in differ.items()))
+    rendered = {name: load(f"docs-render-{name}.json") for name in ("pyopenms-local", "pyopenms-latest", "openms-latest")}
+    if any(rendered.values()):
+        def part(name, report):
+            if report is None:
+                return f"{name}: no report"
+            if report["status"] == "not run":
+                return f"{name}: not run ({report.get('reason') or 'no reason given'})"
+            pages = report.get("pages_with_findings") or {}
+            found = ", ".join(f"{k} on {v} pages" for k, v in pages.items() if v) or "no findings"
+            extra = "; ".join(report.get("problems") or []) or report.get("reason") or report.get("note") or ""
+            warnings = report.get("sphinx_warnings", (report.get("build") or {}).get("sphinx_warnings"))
+            return (f"{name}: {report['status']}, {report.get('pages', 0)} pages, {found}"
+                    + (f", {warnings} Sphinx warnings" if warnings is not None else "") + (f" ({extra})" if extra else ""))
+        statuses = [r["status"] for r in rendered.values() if r]
+        exit_code = data.get("pyopenms_docs_build_exit")
+        ok = (False if "failed" in statuses or exit_code not in (None, 0) else
+              None if None in rendered.values() or "not run" in statuses else all(s == "passed" for s in statuses))
+        row("E11 the documentation renders correctly", ok,
+            (f"the local Sphinx build exited {exit_code} (reports/pyopenms-sphinx.log); " if exit_code else "")
+            + "; ".join(part(n, r) for n, r in rendered.items()))
     diff = load("pyopenms-api-diff.json")
     if diff:
         row("D1 removed Python names are in the CHANGELOG", not diff.get("removed_names_not_in_changelog"),
@@ -224,8 +305,10 @@ def summary():
         env_missing = [n for n, v in audit["DOC-ENV-VARS"].items() if not v["documented"]]
         row("E7 environment variables documented", not env_missing, f"{env_missing}")
         cl = audit["CHANGELOG-LINT"]
-        row("E8 CHANGELOG clean", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]),
-            f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}")
+        row("E8 CHANGELOG clean", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]
+                                       or cl.get("repeated_sections")),
+            f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}"
+            f"; sections twice {cl.get('repeated_sections', [])}")
         row("A3 version strings agree", not audit["VERSION-STRINGS"]["mismatched"],
             f"expected {audit['VERSION-STRINGS']['expected']}; mismatched {audit['VERSION-STRINGS']['mismatched']}")
     def library_list(report):
@@ -270,17 +353,20 @@ def read_desktop_revision():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=["resolve", "desktop", "pkg", "python", "source", "docs", "summary", "all"])
+    parser.add_argument("phase", choices=["resolve", "desktop", "pkg", "container", "python", "source", "docs",
+                                          "summary", "all"])
     phase = parser.parse_args().phase
     os.chdir(ROOT)
     REPORTS.mkdir(exist_ok=True)
     WORK.mkdir(parents=True, exist_ok=True)
-    phases = {"resolve": resolve, "desktop": desktop, "pkg": pkg, "python": python_phase, "source": source,
-              "docs": docs, "summary": summary}
+    phases = {"resolve": resolve, "desktop": desktop, "pkg": pkg, "container": container, "python": python_phase,
+              "source": source, "docs": docs, "summary": summary}
     for name in (list(phases) if phase == "all" else [phase]):
         if name == "desktop" and os.environ.get("LAB_OPENMS_PACKAGE", "nightly").strip().lower() in ("", "none"):
             continue
         if name == "pkg" and os.environ.get("LAB_MACOS_PACKAGE", "nightly").strip().lower() == "none":
+            continue
+        if name == "container" and os.environ.get("LAB_CONTAINER_IMAGE", "").strip().lower() == "none":
             continue
         phases[name]()
 

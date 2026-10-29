@@ -21,7 +21,7 @@ is enough:
 The files are interpreted in order, as a configure step would: set(), list(), if(), foreach(),
 macro(), include(), find_program(), configure_file() and the few other commands they use.
 What the build knew is supplied as variables: the tools in the package's registry, the build
-options its tools reveal (OpenSwath, WNetAlign, GUI, OpenTIMS, CWL export, zlib-ng) and the
+options its tools reveal (OpenSwath, WNetAlign, GUI, OpenTIMS, CWL export, zlib-ng, ONNX) and the
 platform; -D NAME=VALUE adds or overrides one, as with cmake. A test inside an if() that is
 false for this package is reported as skipped with the condition, as is a test whose command
 needs something missing (a variable, an input outside the checkout, an executable). Nothing
@@ -443,6 +443,18 @@ class Replay:
             elif name == "foreach":
                 end = matching(commands, i, "foreach", "endforeach")
                 words = self.arguments(args)
+                if "IN" in words and words[words.index("IN") + 1:][:1] == ["ZIP_LISTS"]:
+                    # foreach(<var>... IN ZIP_LISTS <list>...): one variable per list, or <var>_<N>
+                    k = words.index("IN")
+                    names, lists = words[:k], [split_list(self.vars.get(w, "")) for w in words[k + 2:]]
+                    names = names if len(names) == len(lists) else [f"{names[0]}_{n}" for n in range(len(lists))]
+                    self.loop_variables.update(names)
+                    for index in range(max((len(values) for values in lists), default=0)):
+                        for loop_name, values in zip(names, lists):
+                            self.assign(loop_name, values[index] if index < len(values) else None)
+                        self.execute(commands[i + 1:end])
+                    i = end + 1
+                    continue
                 variable, items = words[0], words[1:]
                 if items[:1] == ["RANGE"]:
                     bounds = [int(x) for x in items[1:]]
@@ -528,6 +540,9 @@ class Replay:
             current = [c for c in current if c not in items]
         elif operation == "REMOVE_DUPLICATES":
             current = list(dict.fromkeys(current))
+        elif operation == "REMOVE_AT":
+            drop = {int(k) % len(current) for k in items} if current else set()
+            current = [c for n, c in enumerate(current) if n not in drop]
         elif operation == "LENGTH":
             return self.assign(items[0], str(len(current)))
         elif operation == "GET":
@@ -548,6 +563,9 @@ class Replay:
             self.assign(words[4], re.sub(words[2], replacement, "".join(words[5:])))
         elif words[0] in ("TOLOWER", "TOUPPER"):
             self.assign(words[2], words[1].lower() if words[0] == "TOLOWER" else words[1].upper())
+        elif words[0] == "MAKE_C_IDENTIFIER":
+            identifier = re.sub(r"[^A-Za-z0-9_]", "_", words[1])
+            self.assign(words[2], "_" + identifier if identifier[:1].isdigit() else identifier)
         else:
             self.notes.append(f"{where}: string({words[0]}) is not replayed")
 
@@ -656,7 +674,8 @@ class Replay:
     def do_add_test(self, args, where):
         self.missing = set()
         words = self.arguments(args)
-        test = {"depends": [], "will_fail": False, "pass_regex": None, "fail_regex": None, "skip_regex": None,
+        test = {"depends": [], "fixtures_setup": [], "fixtures_required": [], "will_fail": False,
+                "pass_regex": None, "fail_regex": None, "skip_regex": None,
                 "skip_code": None, "timeout": None, "environment": [], "source": where,
                 "working_directory": self.vars["CMAKE_CURRENT_BINARY_DIR"]}
         if words[:1] == ["NAME"]:
@@ -688,6 +707,8 @@ class Replay:
             for key, value in zip(words[k + 1::2], words[k + 2::2]):
                 if key == "DEPENDS":
                     test["depends"] += split_list(value)
+                elif key in ("FIXTURES_SETUP", "FIXTURES_REQUIRED"):
+                    test[key.lower()] = split_list(value)
                 elif key == "WILL_FAIL":
                     test["will_fail"] = constant(value) is True
                 elif key in ("PASS_REGULAR_EXPRESSION", "FAIL_REGULAR_EXPRESSION", "SKIP_REGULAR_EXPRESSION"):
@@ -713,20 +734,24 @@ def probe(*command, env=None):
         return None
 
 
+def loaded_libraries(bin_dir):
+    """The shared libraries a tool loads: from the loader on macOS and Linux, and on Windows
+    every DLL next to the executables, where the loader looks first."""
+    tool = bin_dir / f"FileInfo{EXE}"
+    if sys.platform == "darwin":
+        loaded = probe(tool, "--help", env=dict(os.environ, DYLD_PRINT_LIBRARIES="1"))
+        return re.findall(r"(/\S+\.dylib)", loaded.stderr) if loaded else []
+    if WINDOWS:
+        return [str(p) for p in bin_dir.glob("*.dll")]
+    listing = probe("ldd", tool)
+    return re.findall(r"=>\s*(/\S+)", listing.stdout) if listing else []
+
+
 def loads_zlib_ng(bin_dir):
     """Whether the tools load zlib-ng, which the build records as HAVE_ZLIB_NG (its zlib.h
     defines ZLIBNG_VERSION). zlib-ng names itself in the version it reports, classic zlib
     does not, so the loaded zlib and OpenMS libraries (zlib may be linked in) are searched."""
-    tool = bin_dir / f"FileInfo{EXE}"
-    if sys.platform == "darwin":
-        loaded = probe(tool, "--help", env=dict(os.environ, DYLD_PRINT_LIBRARIES="1"))
-        libraries = re.findall(r"(/\S+\.dylib)", loaded.stderr) if loaded else []
-    elif WINDOWS:  # the loader looks next to the executable first
-        libraries = [str(p) for p in bin_dir.glob("*.dll")]
-    else:
-        listing = probe("ldd", tool)
-        libraries = re.findall(r"=>\s*(/\S+)", listing.stdout) if listing else []
-    candidates = sorted({p for p in libraries
+    candidates = sorted({p for p in loaded_libraries(bin_dir)
                          if re.match(r"(lib)?(z|zlib1?|z-ng|zlib-ng2?|OpenMS)[.-]", Path(p).name, re.I)})
     # macOS keeps its own libraries, Apple's classic zlib among them, in the dyld shared cache
     # rather than on disk, so a loaded /usr/lib/libz.1.dylib cannot be read and is not zlib-ng.
@@ -743,6 +768,32 @@ def loads_zlib_ng(bin_dir):
     cached = [p for p in candidates if p not in on_disk]
     evidence = ("zlib-ng in " + ", ".join(marked)) if marked else "no zlib-ng in " + ", ".join(on_disk)
     return bool(marked), evidence + (f"; from the dyld shared cache: {', '.join(cached)}" if cached else "")
+
+
+def carries_onnx(bin_dir, share):
+    """Whether the package was built WITH_ONNX: only such a build installs the PeptDeep models
+    (share/OpenMS/models) and links ONNX Runtime into libOpenMS. The runtime shows up as a
+    loaded libonnxruntime on Linux and macOS; a static link, as on Windows, leaves its name in
+    the OpenMS library itself; failing both, the package ships libonnxruntime in its lib
+    directory. Models and runtime both have to be there."""
+    models = sorted(p.name for p in (share / "models").glob("peptdeep_*.onnx"))
+    libraries = loaded_libraries(bin_dir)
+    runtime = next((p for p in libraries if re.match(r"(lib)?onnxruntime[.-]", Path(p).name, re.I)), None)
+    how = f"loads {runtime}" if runtime else None
+    if not runtime:
+        for path in (p for p in libraries if re.match(r"(lib)?OpenMS[.-]", Path(p).name) and Path(p).is_file()):
+            try:
+                if b"onnxruntime" in Path(path).read_bytes():
+                    how = f"linked into {path}"
+                    break
+            except OSError:
+                pass
+    if not how:  # a hardened macOS executable may not trace what it loads
+        shipped = sorted(bin_dir.parent.glob("lib/*onnxruntime*"))
+        how = f"ships {shipped[0]} next to libOpenMS" if shipped else None
+    evidence = (f"{len(models)} PeptDeep models in share/OpenMS/models ({', '.join(models) or 'none'}); "
+                f"ONNX Runtime {how or 'neither loaded nor linked into the OpenMS library'}")
+    return bool(models) and bool(how), evidence
 
 
 def qt_platform(bin_dir):
@@ -767,10 +818,16 @@ def package_configuration(bin_dir, share):
              if line.strip() and not line.startswith("#")]
     listed = probe(bin_dir / f"FileConverter{EXE}", "--help")  # TOPP tools print their help on stderr
     formats = listed.stdout + listed.stderr if listed else ""
+    # -RawToMzML:reader offers 'inprocess' only in builds WITH_THERMO_RAW; it is an advanced
+    # parameter, so only --helphelp lists it
+    advanced = probe(bin_dir / f"FileConverter{EXE}", "--helphelp")
+    reader = re.search(r"-RawToMzML:reader\b.*", (advanced.stdout + advanced.stderr) if advanced else "")
+    has_inprocess = bool(reader and "'inprocess'" in reader.group(0))
     with tempfile.TemporaryDirectory() as folder:  # CWL export exists only with ENABLE_TDL
         cwl = probe(bin_dir / f"FileInfo{EXE}", "-write_cwl", folder)
         writes_cwl = cwl is not None and cwl.returncode == 0 and any(p.stat().st_size for p in Path(folder).iterdir())
     zlib_ng, zlib_evidence = loads_zlib_ng(bin_dir)
+    onnx, onnx_evidence = carries_onnx(bin_dir, share)
     on = lambda flag: "ON" if flag else "OFF"
     registered = lambda tool: f"{tool} is {'' if tool in tools else 'not '}registered"
     has_d = "'d'" in formats
@@ -782,9 +839,12 @@ def package_configuration(bin_dir, share):
         "WITH_GUI": (on("ImageCreator" in tools), registered("ImageCreator") + ", a tool built only WITH_GUI"),
         "HAS_XSERVER": ("ON", "CMake default; see qt_platform for the display the tests use"),
         "WITH_OPENTIMS": (on(has_d), f"'d' is {'' if has_d else 'not '}among FileConverter's input formats"),
+        "WITH_THERMO_RAW": (on(has_inprocess), f"'inprocess' is {'' if has_inprocess else 'not '}among the values "
+                            "of FileConverter's -RawToMzML:reader"),
         "ENABLE_TDL": (on(writes_cwl), "FileInfo -write_cwl " + ("wrote a CWL file" if writes_cwl else
                        f"failed (exit {cwl.returncode if cwl else 'n/a'})")),
         "HAVE_ZLIB_NG": (on(zlib_ng), zlib_evidence),
+        "WITH_ONNX": (on(onnx), onnx_evidence),
         "CMAKE_SYSTEM_NAME": ({"win32": "Windows", "darwin": "Darwin"}.get(sys.platform, "Linux"), "this machine"),
         "CMAKE_HOST_SYSTEM_PROCESSOR": (platform.machine(), "this machine"),
     }
@@ -796,6 +856,18 @@ def package_configuration(bin_dir, share):
 # ------------------------------------------------------------------------------------------
 # Running the tests
 # ------------------------------------------------------------------------------------------
+def require_fixtures(tests, order):
+    """A test with FIXTURES_REQUIRED runs after the tests that set its fixtures up, and ctest
+    adds them when it is selected: here they become DEPENDS, which do both."""
+    setup = {}
+    for name in order:
+        for fixture in tests[name]["fixtures_setup"]:
+            setup.setdefault(fixture, []).append(name)
+    for name in order:
+        for fixture in tests[name]["fixtures_required"]:
+            tests[name]["depends"] += [s for s in setup.get(fixture, []) if s != name and s not in tests[name]["depends"]]
+
+
 def select(tests, order, pattern):
     chosen = {n for n in order if re.search(pattern, n)}
     changed = True
@@ -831,8 +903,9 @@ def posix_shell(name):
 
 
 def any_match(patterns, text):
-    """ctest's regular-expression properties are lists; one matching element is enough."""
-    return any(re.search(p, text) for p in patterns)
+    """ctest's regular-expression properties are lists; one matching element is enough. In
+    CMake's regular expressions '.' matches a newline too, so a '.*' spans lines."""
+    return any(re.search(p, text, re.DOTALL) for p in patterns)
 
 
 def tracked_files(openms):
@@ -955,7 +1028,27 @@ def components(names, tests):
     groups = {}
     for name in names:
         groups.setdefault(find(name), []).append(name)
-    return list(groups.values())
+    return [dependency_order(group, tests) for group in groups.values()]
+
+
+def dependency_order(group, tests):
+    """File order, except that a test runs after the tests it DEPENDS on, as with ctest. A
+    dependency can be defined later than its dependent: third_party_tests.cmake is included
+    before src/tests/topp/CMakeLists.txt defines tests that its own tests depend on."""
+    members, done, ordered = set(group), set(), []
+
+    def visit(name, stack):
+        if name in done or name in stack:  # a cycle keeps file order
+            return
+        for dep in tests[name]["depends"]:
+            if dep in members:
+                visit(dep, stack | {name})
+        done.add(name)
+        ordered.append(name)
+
+    for name in group:
+        visit(name, frozenset())
+    return ordered
 
 
 def main():
@@ -1033,6 +1126,7 @@ def main():
         excluded.update(replay.excluded)
         notes += replay.notes
 
+    require_fixtures(tests, order)
     pattern = {"release-gate": RELEASE_GATE, "all": "."}.get(args.select, args.select)
     chosen = select(tests, order, pattern)
     not_registered = [n for n in excluded if n not in tests and re.search(pattern, n)]
@@ -1059,7 +1153,8 @@ def main():
     Path(args.report).write_text(json.dumps(report, indent=1), encoding="utf-8")
     shutil.rmtree(work, ignore_errors=True)
 
-    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_OPENTIMS", "WITH_GUI", "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
+    for name in ("ENABLE_TDL", "HAVE_ZLIB_NG", "WITH_ONNX", "WITH_OPENTIMS", "WITH_THERMO_RAW", "WITH_GUI",
+                 "DISABLE_OPENSWATH", "WITH_WNETALIGN"):
         print(f"  {name}={variables[name]} ({evidence[name]})")
     print(f"  Qt platform: {qt or 'native'} ({qt_evidence})")
     for note in notes:
