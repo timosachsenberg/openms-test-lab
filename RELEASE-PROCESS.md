@@ -59,7 +59,7 @@ E8 fails on anything but the summary. Before the tag:
 - Date the heading, e.g. `(Released September 2026)`.
 - Add a short introduction and a *Known issues:* list. The release notes move *Known issues* up front, and trim the rest when it exceeds GitHub's 125,000-character limit (OpenMS/OpenMS#10355).
 - Read the summary once as a user would: every headline feature of the release is there, nothing a user would not notice is, and no bullet repeats another.
-- Announce every removed tool, class and parameter under *Removed*, and every breaking change as a `BREAKING:` bullet that names the replacement (checks D1, D5, E2).
+- Announce every removed tool, class and pyOpenMS name under *Removed*, and every change users must act on, removed or renamed parameters included, as a `BREAKING:` note that names the replacement (checks D1, D5, E2).
 - `tools/changelog_helper.sh` compares the TOPP binaries of two releases and lists new and removed tools and INI parameter changes.
 - Check `AUTHORS` for new contributors.
 
