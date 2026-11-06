@@ -66,7 +66,7 @@ evidence.
 - [ ] E5 New public classes are documented —
 - [ ] E6 Build options are documented —
 - [ ] E7 Environment variables are documented —
-- [ ] E8 The CHANGELOG is clean —
+- [ ] E8 The CHANGELOG is clean and a summary —
 - [ ] E9 Documentation builds without warnings —
 - [ ] E10 The online documentation of the version exists —
 - [ ] E11 The documentation renders correctly (built with the candidate's wheel / published `latest`) —

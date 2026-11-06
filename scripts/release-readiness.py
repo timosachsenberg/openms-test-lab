@@ -305,10 +305,14 @@ def summary():
         env_missing = [n for n, v in audit["DOC-ENV-VARS"].items() if not v["documented"]]
         row("E7 environment variables documented", not env_missing, f"{env_missing}")
         cl = audit["CHANGELOG-LINT"]
-        row("E8 CHANGELOG clean", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]
-                                       or cl.get("repeated_sections")),
+        sm = cl.get("summary", {})
+        row("E8 CHANGELOG clean and a summary", not (cl["duplicated_bullets"] or cl["suspicious_short_continuation_lines"]
+                                                     or cl.get("repeated_sections") or sm.get("problems")),
             f"'{cl['heading']}'; duplicated {len(cl['duplicated_bullets'])}; orphaned lines {cl['suspicious_short_continuation_lines']}"
-            f"; sections twice {cl.get('repeated_sections', [])}")
+            f"; sections twice {cl.get('repeated_sections', [])}"
+            + (f"; {cl.get('lines')} lines, blocks {sm.get('blocks')}, other headings {sm.get('unexpected_headings')}"
+               f", nested bullets {len(sm.get('nested_bullets', []))}, long bullets {sm.get('long_bullets')}"
+               f", crowded blocks {sm.get('crowded_blocks')}" if sm.get("required") else ""))
         row("A3 version strings agree", not audit["VERSION-STRINGS"]["mismatched"],
             f"expected {audit['VERSION-STRINGS']['expected']}; mismatched {audit['VERSION-STRINGS']['mismatched']}")
     def library_list(report):

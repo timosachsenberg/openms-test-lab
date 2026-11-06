@@ -49,10 +49,17 @@ Every page of the pyOpenMS docs reads `switcher.json` from `develop`
 (`conf.py`, `json_url`), so one entry there serves all versions.
 
 **The CHANGELOG** feeds the release notes: `release.yml`, step *Create Change Log*, cuts out
-the section under the `OpenMS X.Y.Z` heading. Before the tag:
+the section under the `OpenMS X.Y.Z` heading. From 3.7.0 on that section is a summary users
+read before an upgrade: the blocks *Major additions*, *Major changes* and *Removed* (a patch
+release *Fixed*), one bullet of at most three lines per feature, ending with its PR numbers.
+The details stay in the pull requests. The weekly changelog-sync workflow of OpenMS
+(`.github/workflows/changelog-sync.md`) is meant to keep these blocks; it has been disabled
+since 2026-06-17, so until it runs again the summary is written by hand before the release.
+E8 fails on anything but the summary. Before the tag:
 - Date the heading, e.g. `(Released September 2026)`.
 - Add a short introduction and a *Known issues:* list. The release notes move *Known issues* up front, and trim the rest when it exceeds GitHub's 125,000-character limit (OpenMS/OpenMS#10355).
-- Announce every removed tool and every breaking pyOpenMS change, with the new call (checks D1, D5, E2).
+- Read the summary once as a user would: every headline feature of the release is there, nothing a user would not notice is, and no bullet repeats another.
+- Announce every removed tool, class and pyOpenMS name under *Removed*, and every change users must act on, removed or renamed parameters included, as a `BREAKING:` note that names the replacement (checks D1, D5, E2).
 - `tools/changelog_helper.sh` compares the TOPP binaries of two releases and lists new and removed tools and INI parameter changes.
 - Check `AUTHORS` for new contributors.
 
@@ -262,7 +269,7 @@ Check **G7** once the packages are on the bioconda channel.
 ## 10. After the release
 
 - **Start the next cycle.** Merge the next-version PR from [step 5](#5-what-the-tag-starts-and-how-to-check-it).
-  Its `(under development)` CHANGELOG heading is what the daily changelog-sync workflow edits.
+  Its `(under development)` CHANGELOG heading is what the weekly changelog-sync workflow edits.
 - **Bioconda nightly.** Bump the fork's `nightly` recipes to the next `…dev` version.
   `bioconda_deploy.yaml` builds them every night into the anaconda.org channel `openms`.
   Before each build it merges `bioconda/master` into `nightly`, so once the release recipe is
