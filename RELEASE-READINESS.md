@@ -206,7 +206,7 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 | D2 | No user-guide page regressed | `scripts/doc-examples.py --baseline <previous release's report>` → `regression` pages | No page that ran with the previous release fails with the candidate | Blocking |
 | D3 | The user guide teaches no deprecated API | same report, `warnings` | No `DeprecationWarning` from pyOpenMS while a page runs | Advisory |
 | D4 | New classes have docstrings | `pyopenms-api.py diff` → `added_classes_without_docstring` | Empty | Advisory |
-| D5 | Every intentional API change has a migration note | For each D2 regression, decide: *bug* (report with a reproduction) or *intentional* (a changed signature, return value or type). Every intentional change needs a `BREAKING` entry in the PyOpenMS section that shows the new call, and the page must be updated | No intentional change without both | Blocking |
+| D5 | Every intentional API change has a migration note | For each D2 regression, decide: *bug* (report with a reproduction) or *intentional* (a changed signature, return value or type). Every intentional change needs a `BREAKING:` bullet under *Major changes* or *Removed* that names the changed call and what replaces it (before 3.7.0: in the PyOpenMS section, with the new call), and the page must be updated | No intentional change without both | Blocking |
 | D6 | The wheel's own tests passed for this revision | The `pyopenms-wheels-cibuildwheel.yml` run in OpenMS/OpenMS for the candidate revision | Green on all four platforms | Blocking |
 
 ### E. Documentation
@@ -214,21 +214,22 @@ and `SKIP_RETURN_CODE`, `ENVIRONMENT` and `TIMEOUT` apply.
 | ID | Check | How | Pass | Level |
 | --- | --- | --- | --- | --- |
 | E1 | Every tool is in the TOPP index and has a complete page | `release-docs-audit.py` → `DOC-TOOL-INDEX`, `DOC-TOOL-PAGE` | Every registered tool listed once; its page has `@brief` and the generated `.cli`/`.html` parameter includes | Blocking for tools new in this release, advisory otherwise |
-| E2 | New and removed tools are in the CHANGELOG | `DOC-TOOL-CHANGELOG` | Added tools under *New tools*, removed ones under *Removed tools*, with the name users knew in the previous release | Blocking |
+| E2 | New and removed tools are in the CHANGELOG | `DOC-TOOL-CHANGELOG` | Added tools under *Major additions*, removed ones under *Removed* (before 3.7.0: *New tools* and *Removed tools*), with the name users knew in the previous release | Blocking |
 | E3 | Nothing refers to removed tools | `DOC-STALE-TOOLS` | No hits outside CHANGELOG history | Advisory |
 | E4 | Every headline feature is documented for users | Judgement, see [below](#e4-headline-features) | Each headline feature has a user-facing page or section; pyOpenMS-exposed features also a user-guide section | Blocking |
 | E5 | New public classes are documented | `DOC-CLASS-BRIEF` | Every new public header documents its main class | Advisory |
 | E6 | Build options are documented | `DOC-CMAKE-OPTIONS` | New user-facing options documented, removed ones gone from the docs | Advisory |
 | E7 | Environment variables are documented | `DOC-ENV-VARS` | Each OpenMS-specific variable the code reads is named in user documentation | Advisory |
-| E8 | The CHANGELOG is clean | `CHANGELOG-LINT` | No duplicated bullets or orphaned text; at release, the heading carries a date instead of "under development" | Blocking at release |
+| E8 | The CHANGELOG is clean and a summary | `CHANGELOG-LINT` | No duplicated bullets or orphaned text; from 3.7.0 on the section is a summary (`summary` in the report): only the blocks *Major additions*, *Major changes*, *Removed*, *Fixed* (patch releases) and *Known issues*, after an optional introduction; flat bullets of at most three lines, at most 15 to a block. The details belong in the pull requests the bullets link. At release, the heading carries a date instead of "under development" | Blocking at release |
 | E9 | Documentation builds without warnings | Build the `doc` target and run `Doxygen_Warning_test` (OpenMS `doc/CMakeLists.txt`); run `doc-validate.yml` (Sphinx for `doc/openms` and `doc/pyopenms`) on the candidate revision | Zero Doxygen warnings; both Sphinx builds succeed. A successful build is not a correctly rendered one: that is E11 | Blocking |
 | E10 | The online documentation of the version exists | For every tool, the `Full documentation:` URL of `--help` (`doc_url` in `topp-tools.json`); `https://pyopenms.readthedocs.io/en/v<version>/` (before 3.6.0 `release-<version>`), which exists once the readthedocs version is activated ([RELEASE-PROCESS.md, step 7](RELEASE-PROCESS.md#7-documentation)) | HTTP 200 everywhere, and E11's scan of the version (`scripts/docs-render.py --version v<version> --pages all`) finds nothing | Blocking after deployment |
 | E11 | The documentation renders correctly | Release readiness builds `doc/pyopenms` of the candidate's revision with the candidate's wheel, as Read the Docs does, and scans every page (`scripts/docs-render.py --html` → `reports/docs-render-pyopenms-local.json`). It then reads the newest Read the Docs build of `latest` for pyOpenMS and OpenMS (state, commit, the pyopenms wheel it installed, Sphinx warnings) and a sample of its pages (`--version latest` → `reports/docs-render-*-latest.json`). On API reference pages a finding is a nanobind object instead of a documented function (`nb_func`), a private module name (`pyopenms._pyopenms_kernel`) or a raw C++ type in a signature; on every page, reST or MyST markup left unrendered outside code (`.. code-block::`, `:param x:`, `>>>`). Getters documented as setters and the other way round, and the share of methods without a description, are reported. E9 does not see any of this: `doc-validate.yml` builds with the pyopenms release from PyPI, and a build whose pages are broken still succeeds (the 3.6.0 API reference: 381 warnings, OpenMS/OpenMS#10599). The published part checks what readers see: when `latest` was built with another wheel than the candidate's, its pages are still scanned, and the report says the candidate is not shown (`candidate_shown: false`); the local build covers the candidate, E10 the published version after deployment | No finding in the local build or the published sample, and the newest build of `latest` succeeded | Blocking |
 
 #### E4: headline features
 
-1. List the headline features from the release's CHANGELOG section: *General*, *New tools*,
-   *OpenMS Library → Added*, and the new bindings named in *PyOpenMS*.
+1. List the headline features from the release's CHANGELOG section: every bullet of *Major additions*
+   and the behavior changes of *Major changes* (before 3.7.0: *General*, *New tools*,
+   *OpenMS Library → Added*, and the new bindings named in *PyOpenMS*).
 2. For each, search the user documentation: `doc/openms/docs/**` (openms.readthedocs.io),
    `doc/doxygen/public/*.doxygen`, the tool's own `@page`, and for anything bound in Python
    `doc/pyopenms/docs/source/user_guide/*.rst`. `pyopenms-api.py diff --docs` lists every new

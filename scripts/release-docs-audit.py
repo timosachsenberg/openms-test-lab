@@ -12,14 +12,17 @@ Checks, named as in RELEASE-READINESS.md:
   DOC-TOOL-INDEX      every registered TOPP tool is listed once in doc/doxygen/public/TOPP.doxygen
   DOC-TOOL-PAGE       every tool has one `@page TOPP_<Tool>` with @brief and the generated
                       parameter includes (TOPP_<Tool>.cli / TOPP_<Tool>.html)
-  DOC-TOOL-CHANGELOG  tools added or removed since the base release are named in this
-                      release's CHANGELOG section, removed tools under the name users knew
+  DOC-TOOL-CHANGELOG  tools added since the base release are named under 'Major additions:',
+                      removed ones under 'Removed:' (before 3.7.0 'New tools:' and 'Removed tools:'),
+                      removed tools under the name users knew
   DOC-STALE-TOOLS     removed tools are no longer referenced by the documentation or examples
   DOC-CLASS-BRIEF     headers added since the base release document their main class
   DOC-CMAKE-OPTIONS   CMake options added since the base release are documented, and removed
                       ones are no longer documented
   DOC-ENV-VARS        environment variables the code reads are documented somewhere
-  CHANGELOG-LINT      the release section has no duplicated or orphaned bullet text, and each section once
+  CHANGELOG-LINT      the release section has no duplicated or orphaned bullet text, and each section once;
+                      from 3.7.0 on it is a summary: only the blocks in SUMMARY_BLOCKS, flat bullets of
+                      at most SUMMARY_BULLET_LINES lines, at most SUMMARY_BLOCK_BULLETS bullets a block
   VERSION-STRINGS     every file that carries the release version agrees
 
 Each check reports what it found; RELEASE-READINESS.md decides which findings block a release.
@@ -36,6 +39,12 @@ DOXYGEN_INPUTS = ["doc/doxygen/public", "doc/doxygen/install", "src/topp",
                   "src/openms_cli/include", "src/openms_gui/include", "src/openswathalgo/include"]
 PUBLIC_INCLUDE_DIRS = ["src/openms/include/OpenMS", "src/openms_cli/include/OpenMS",
                        "src/openms_gui/include/OpenMS", "src/openswathalgo/include/OpenMS"]
+# From 3.7.0 on a release section of the CHANGELOG is a summary; the details stay in the PRs.
+# "Fixed" is for patch releases, "Known issues" is added at release time.
+SUMMARY_FROM = (3, 7, 0)
+SUMMARY_BLOCKS = ("Major additions", "Major changes", "Removed", "Fixed", "Known issues")
+SUMMARY_BULLET_LINES = 3
+SUMMARY_BLOCK_BULLETS = 15
 USER_DOC_DIRS = ["doc/doxygen/public", "doc/doxygen/install", "doc/openms/docs", "doc/pyopenms/docs/source",
                  "doc/thermo_raw_mzml.md", "README.md", "src/pyOpenMS/README.md"]
 # Pages that exist for GUI applications, which are not TOPP tools and not in the registry.
@@ -132,11 +141,19 @@ def check_tools(repo, base):
     return head_tools, base_tools, {"DOC-TOOL-INDEX": index, "DOC-TOOL-PAGE": page_problems}
 
 
+def summary_block(section, name):
+    """The text of a top-level block of a summary section ("Major additions:", "Removed:")."""
+    match = re.search(rf"^{re.escape(name)}:[ \t]*\n(.*?)(?=^\S|\Z)", section, re.S | re.M)
+    return match.group(1) if match else ""
+
+
 def check_tool_changelog(added, removed, section):
+    # Before 3.7.0 the tools were listed under "TOPP tools:" -> "New tools:" / "Removed tools:";
+    # from 3.7.0 on the summary names them under "Major additions:" / "Removed:". Either counts.
     new_tools = re.search(r"^\s*New tools:\s*\n(.*?)(?=^\s*Removed tools:|^\S)", section, re.S | re.M)
     removed_block = re.search(r"^\s*Removed tools:\s*\n(.*?)(?=^\S|^\s{0,2}\S)", section, re.S | re.M)
-    new_text = new_tools.group(1) if new_tools else ""
-    removed_text = removed_block.group(1) if removed_block else ""
+    new_text = (new_tools.group(1) if new_tools else "") + "\n" + summary_block(section, "Major additions")
+    removed_text = (removed_block.group(1) if removed_block else "") + "\n" + summary_block(section, "Removed")
     word = lambda name, text: re.search(rf"\b{re.escape(name)}\b", text) is not None
     return {
         "added_since_base": sorted(added),
@@ -239,7 +256,39 @@ def check_env_vars(repo, docs_text):
             for name, files in sorted(names.items()) if name not in STANDARD_ENV}
 
 
-def check_changelog(heading, section):
+def check_summary(section):
+    """Whether a release section is the short summary users read before an upgrade."""
+    blocks, unexpected, nested, bullets = {}, [], [], []
+    block, bullet = None, None
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            bullet = None
+            continue
+        heading = re.match(r"^\s*([A-Z][\w ]*):$", line)
+        if heading:
+            block, bullet = heading.group(1), None
+            if block in SUMMARY_BLOCKS:
+                blocks.setdefault(block, 0)
+            else:
+                unexpected.append(block)
+            continue
+        if stripped.startswith("- "):
+            if len(line) - len(line.lstrip()) > 2:
+                nested.append(stripped[:100])
+            bullet = [stripped]
+            if block in blocks:
+                blocks[block] += 1
+            if block is not None:
+                bullets.append(bullet)
+        elif bullet is not None:
+            bullet.append(stripped)
+    return {"blocks": blocks, "unexpected_headings": sorted(set(unexpected)), "nested_bullets": nested,
+            "long_bullets": [" ".join(b)[:100] for b in bullets if len(b) > SUMMARY_BULLET_LINES],
+            "crowded_blocks": {name: n for name, n in blocks.items() if n > SUMMARY_BLOCK_BULLETS}}
+
+
+def check_changelog(heading, section, version=None):
     bullets, current = [], None
     for line in section.splitlines():
         stripped = line.strip()
@@ -274,9 +323,17 @@ def check_changelog(heading, section):
     # usually what a merge left behind, and its entries are missed where readers look.
     headings = [line.strip() for line in section.splitlines() if re.match(r"^[A-Z][\w ]*:$", line)]
     repeated = sorted({h for h in headings if headings.count(h) > 1})
+    numbers = tuple(int(n) for n in re.findall(r"\d+", version or "")[:3])
+    summary = check_summary(section)
+    summary["required"] = numbers >= SUMMARY_FROM
+    summary["is_summary"] = bool(set(summary["blocks"]) - {"Known issues"}) and not summary["unexpected_headings"]
+    summary["problems"] = summary["required"] and (not summary["is_summary"] or bool(
+        summary["nested_bullets"] or summary["long_bullets"] or summary["crowded_blocks"]))
     return {"heading": heading.strip(), "under_development": "under development" in heading.lower(),
-            "bullets": len(texts), "duplicated_bullets": duplicated,
-            "suspicious_short_continuation_lines": orphan_lines, "repeated_sections": repeated}
+            "bullets": len(texts), "lines": sum(1 for line in section.splitlines() if line.strip()),
+            "duplicated_bullets": duplicated,
+            "suspicious_short_continuation_lines": orphan_lines, "repeated_sections": repeated,
+            "summary": summary}
 
 
 def check_versions(repo, expected):
@@ -329,7 +386,7 @@ def main():
         "DOC-CLASS-BRIEF": check_class_briefs(repo, args.base),
         "DOC-CMAKE-OPTIONS": check_cmake_options(repo, args.base, docs_text) if args.base else {"skipped": "no base"},
         "DOC-ENV-VARS": check_env_vars(repo, docs_text),
-        "CHANGELOG-LINT": check_changelog(heading, section),
+        "CHANGELOG-LINT": check_changelog(heading, section, version),
         "VERSION-STRINGS": versions,
     }
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
@@ -346,8 +403,8 @@ def main():
         tc = report["DOC-TOOL-CHANGELOG"]
         print(f"DOC-TOOL-CHANGELOG  added {tc['added_since_base']}")
         print(f"                    removed {tc['removed_since_base']}")
-        print(f"                    added but not under 'New tools': {tc['added_not_in_new_tools_list']}")
-        print(f"                    removed but not under 'Removed tools': {tc['removed_not_in_removed_tools_list']}")
+        print(f"                    added but not under 'Major additions'/'New tools': {tc['added_not_in_new_tools_list']}")
+        print(f"                    removed but not under 'Removed'/'Removed tools': {tc['removed_not_in_removed_tools_list']}")
     stale = report["DOC-STALE-TOOLS"]
     print(f"DOC-STALE-TOOLS     {len(stale)} references to removed tools")
     for hit in stale[:15]:
@@ -364,6 +421,10 @@ def main():
     cl = report["CHANGELOG-LINT"]
     print(f"CHANGELOG-LINT      '{cl['heading']}': {cl['bullets']} bullets, {len(cl['duplicated_bullets'])} duplicated, "
           f"{len(cl['suspicious_short_continuation_lines'])} orphaned lines, sections twice: {cl['repeated_sections']}")
+    sm = cl["summary"]
+    print(f"                    {cl['lines']} lines; summary {'required' if sm['required'] else 'not required'}: "
+          f"blocks {sm['blocks']}, other headings {sm['unexpected_headings']}, nested bullets {len(sm['nested_bullets'])}, "
+          f"bullets over {SUMMARY_BULLET_LINES} lines {len(sm['long_bullets'])}, crowded blocks {sm['crowded_blocks']}")
     print(f"VERSION-STRINGS     expected {version}; mismatched {versions['mismatched']}")
     print(f"report: {args.report}")
 
