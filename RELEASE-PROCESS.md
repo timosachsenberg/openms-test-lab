@@ -24,6 +24,7 @@ Facts below cite OpenMS/OpenMS files as of `develop` ec49b87 (2026-09-30).
 | [3. Release candidate](#3-release-candidate-optional-untested) | Optional, and broken today | Maintainer | G1–G5 |
 | [4. Tag](#4-tag-the-release) | Annotated `v<version>` on the qualified commit | **Maintainer** | Step 2 |
 | [5. Tag build](#5-what-the-tag-starts-and-how-to-check-it) | Installers, GitHub release, docs, wheels to the archive, containers, next-version PR; then the Windows installer signed by hand | Automatic, then **Maintainer** | G1–G5, G9, G10 |
+| [5b. GUI add-on](#5b-the-gui-add-on-openms-topp-gui) | Tag `v<version>` in OpenMS-TOPP-GUI once the OpenMS installers are on the archive | **Maintainer** | H1 |
 | [6. PyPI](#6-publish-pyopenms-to-pypi) | Dispatch the wheel workflow with `upload-to-pypi` | **Maintainer** | G6 |
 | [7. Documentation](#7-documentation) | readthedocs version, version switcher | **Maintainer** and a PR | G8, E10 |
 | [8. Conda](#8-bioconda) | Bioconda: `openms-meta` first, then `pyopenms` | **Maintainer** (upstream PR) | G7 |
@@ -167,6 +168,29 @@ Check before [step 6](#6-publish-pyopenms-to-pypi) and before announcing:
 - **The GitHub release notes:** open the release page and check that the notes are complete
   and that their download link works. Replace the body by hand if not; for 3.6.0 it was cut
   off at GitHub's length limit, which OpenMS/OpenMS#10355 addresses for later releases.
+
+## 5b. The GUI add-on (OpenMS-TOPP-GUI)
+
+From 3.7.0 on, TOPPView, TOPPAS, INIFileEditor, ExecutePipeline and ImageCreator are not in the
+OpenMS packages: [OpenMS-TOPP-GUI](https://github.com/OpenMS/OpenMS-TOPP-GUI) releases them with
+the same version, as add-on installers `OpenMS-GUI-X.Y.Z-*` installed on top of the OpenMS
+installer (OpenMS/OpenMS#10844). Its release builds against the OpenMS tag and its smoke test
+installs the OpenMS installers from `OpenMSInstaller/release/X.Y.Z/`, so it starts after step 5:
+
+1. `OPENMS_GUI_VERSION` in OpenMS-TOPP-GUI's `CMakeLists.txt` on `develop` is X.Y.Z (else a PR with
+   `tools/update_version_numbers.sh X Y Z`).
+2. A dry run against the tag is green:
+   `gh workflow run release.yml -R OpenMS/OpenMS-TOPP-GUI --ref develop -f deploy=false -f core_ref=vX.Y.Z`.
+3. **Maintainer:** tag the tested commit, `git tag -a vX.Y.Z <commit> -m "OpenMS-TOPP-GUI X.Y.Z"`,
+   and push the tag with your own credentials. It starts OpenMS-TOPP-GUI's `release.yml`.
+4. Check that its GitHub release lists the `.exe`, `.pkg` and both `.deb`, and that
+   `OpenMSInstaller/release/X.Y.Z/` lists the same `OpenMS-GUI-*` files next to OpenMS's. H1 is done
+   on these add-ons, installed on top of the OpenMS installers.
+5. Its `update_version_numbers.yml` opens a PR that sets X.(Y+1).0 on `develop`: merge it once
+   OpenMS `develop` is at X.(Y+1).0 as well (the GUI refuses an OpenMS of another version).
+
+The Homebrew formula `openms-gui` is built from OpenMS-TOPP-GUI too: a release formula takes the
+tarball of its tag vX.Y.Z.
 
 ## 6. Publish pyOpenMS to PyPI
 
@@ -317,6 +341,7 @@ As of 2026-09-30:
 | readthedocs and the version switcher are manual | E10 and A3 fail until [step 7](#7-documentation) is done. The `pyopenms` project stopped building in April 2026 | readthedocs admin, `switcher.json` |
 | Patch releases have no packages before the tag | Problems show up only after the tag | [Patch releases](#patch-releases) |
 | Bioconda is outside Claude's GitHub access | Upstream PRs are opened by a person | [Step 8](#8-bioconda) |
+| The labs do not test the GUI add-on | Since OpenMS/OpenMS#10844 TOPPView, TOPPAS and INIFileEditor come from the OpenMS-TOPP-GUI installers, and no lab installs them: H1 is done by hand and C8 is *not applicable* to the OpenMS package. OpenMS-TOPP-GUI builds nightly installers only when its repository variable `GUI_NIGHTLY_INSTALLERS` is `true` (as of 2026-11-09 it is not: the archive has no `OpenMS-GUI-*` files); a lab can install them on top of the OpenMS nightly once they are published | OpenMS-TOPP-GUI `nightly.yml`, the labs |
 
 **Open for 3.6.0 on 2026-09-30** (details in the release report of lab PR #5):
 - G10: the signed Windows installer, in both places;
