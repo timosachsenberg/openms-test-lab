@@ -398,8 +398,12 @@ def verdict(artifacts):
     container_row("arm64", load(artifact(artifacts, job="container-arm"), "container-checks.json"), "container-arm")
 
     ok, result = job_ok("pkg-relocation")
-    row("C8", "A macOS upgrade installs the apps into the candidate's folder (run 10)", ok,
-        f"job {result}; F11 itself blocks through the release readiness row")
+    detail = f"job {result}; F11 itself blocks through the release readiness row"
+    upgrade = load(artifact(artifacts, prefix="pkg-relocation-upgrade"), "upgrade.json") or {}
+    if upgrade.get("status") == "not applicable":
+        # an OpenMS package without app bundles (the GUI is an add-on since OpenMS/OpenMS#10844)
+        ok, detail = None, f"not applicable: {upgrade.get('reason')}"
+    row("C8", "A macOS upgrade installs the apps into the candidate's folder (run 10)", ok, detail)
 
     failures = [r for r in rows if r["blocking"] and r["result"] != "PASS"]
     decision = "FAIL" if failures else "PASS"

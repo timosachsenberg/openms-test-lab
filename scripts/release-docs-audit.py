@@ -15,11 +15,14 @@ Checks, named as in RELEASE-READINESS.md:
   DOC-TOOL-CHANGELOG  tools added since the base release are named under 'Major additions:',
                       removed ones under 'Removed:' (before 3.7.0 'New tools:' and 'Removed tools:'),
                       removed tools under the name users knew
-  DOC-STALE-TOOLS     removed tools are no longer referenced by the documentation or examples
+  DOC-STALE-TOOLS     removed tools are no longer referenced by the documentation or examples (tools that
+                      moved to another repository, MOVED_TOOLS, may be)
   DOC-CLASS-BRIEF     headers added since the base release document their main class
   DOC-CMAKE-OPTIONS   CMake options added since the base release are documented, and removed
                       ones are no longer documented
-  DOC-ENV-VARS        environment variables the code reads are documented somewhere
+  DOC-ENV-VARS        environment variables the code reads are documented in the user documentation or
+                      on a TOPP tool's page; variables of the system, the C library, OpenMP and BLAS
+                      (FOREIGN_ENV) and developer-only switches (DEVELOPER_ENV) are listed apart
   CHANGELOG-LINT      the release section has no duplicated or orphaned bullet text, and each section once;
                       from 3.7.0 on it is a summary: only the blocks in SUMMARY_BLOCKS, flat bullets of
                       at most SUMMARY_BULLET_LINES lines, at most SUMMARY_BLOCK_BULLETS bullets a block
@@ -49,6 +52,11 @@ USER_DOC_DIRS = ["doc/doxygen/public", "doc/doxygen/install", "doc/openms/docs",
                  "doc/thermo_raw_mzml.md", "README.md", "src/pyOpenMS/README.md"]
 # Pages that exist for GUI applications, which are not TOPP tools and not in the registry.
 GUI_PAGES = {"TOPPView", "TOPPAS", "INIFileEditor", "SwathWizard", "FLASHDeconvWizard"}
+# Tools that left OpenMS for another repository, which still builds and documents them: the CHANGELOG
+# must announce them like removed tools (DOC-TOOL-CHANGELOG), but documentation may name them, e.g.
+# to say where they went (DOC-STALE-TOOLS skips them).
+MOVED_TOOLS = {"ExecutePipeline": "OpenMS-TOPP-GUI (OpenMS/OpenMS#10844)",
+               "ImageCreator": "OpenMS-TOPP-GUI (OpenMS/OpenMS#10844)"}
 
 
 def git(repo, *args):
@@ -64,7 +72,12 @@ def show(repo, ref, path):
 
 
 def read(repo, ref, path):
-    return (repo / path).read_text(encoding="utf-8", errors="replace") if ref is None else show(repo, ref, path)
+    """A file of the working tree (ref None) or of a commit; "" if it does not exist there, e.g.
+    src/openms_gui/CMakeLists.txt after the GUI moved to OpenMS-TOPP-GUI (OpenMS/OpenMS#10844)."""
+    if ref is not None:
+        return show(repo, ref, path)
+    file = repo / path
+    return file.read_text(encoding="utf-8", errors="replace") if file.is_file() else ""
 
 
 def parse_tools(executables_cmake, gui_cmake):
@@ -167,6 +180,7 @@ def check_tool_changelog(added, removed, section):
 
 def check_stale_tools(repo, removed):
     hits = []
+    removed = set(removed) - set(MOVED_TOOLS)
     if not removed:
         return hits
     pattern = re.compile(r"\b(" + "|".join(map(re.escape, sorted(removed))) + r")\b")
@@ -237,9 +251,31 @@ def check_cmake_options(repo, base, docs_text):
 # Variables of the operating system or shell; OpenMS reading them needs no documentation.
 STANDARD_ENV = {"HOME", "USERPROFILE", "PATH", "PATHEXT", "COLUMNS", "XDG_CONFIG_HOME", "TMPDIR", "TEMP",
                 "TMP", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "SHELL", "USER", "USERNAME"}
+# Variables that the system, the C library, OpenMP or BLAS define and document; OpenMS reads them
+# only to respect what a user set for those (ProSE: LD_PRELOAD to detect Valgrind, GLIBC_TUNABLES
+# to keep a user's malloc top pad; TOPPBase: OPENBLAS_NUM_THREADS before limiting OpenBLAS).
+FOREIGN_ENV = {"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
+               "DYLD_INSERT_LIBRARIES", "GLIBC_TUNABLES", "MALLOC_ARENA_MAX", "MALLOC_CONF",
+               "OPENBLAS_NUM_THREADS", "GOTO_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"}
+FOREIGN_PREFIXES = ("OMP_", "KMP_", "GOMP_")
+# OpenMS's own switches that exist for tests or debugging, not for users; each with where it is read.
+DEVELOPER_ENV = {
+    "OPENMS_TRON_ISA": "selects Percolator's TRON kernel (ref, sse2, avx2) for tests (thirdparty/percolator/ssl.cpp)",
+}
+
+
+def tool_page_text(repo):
+    """The documentation blocks of the TOPP tool pages (/** @page TOPP_<Tool> ... */), which are user
+    documentation: they become the tool's online page that `--help` links to."""
+    blocks = []
+    for file in (repo / "src/topp").rglob("*.cpp"):
+        text = file.read_text(encoding="utf-8", errors="replace")
+        blocks += re.findall(r"@page\s+TOPP_\w+.*?\*/", text, re.S)
+    return "\n".join(blocks)
 
 
 def check_env_vars(repo, docs_text):
+    docs_text = docs_text + "\n" + tool_page_text(repo)
     names = {}
     for top in ("src/openms", "src/openms_cli", "src/openms_gui", "src/topp", "src/openswathalgo"):
         for file in (repo / top).rglob("*"):
@@ -252,8 +288,22 @@ def check_env_vars(repo, docs_text):
                 found |= set(re.findall(r"\"(OPENMS_[A-Z0-9_]+|[A-Z]+_PATH|DOTNET_[A-Z_]+)\"", text))
             for name in found:
                 names.setdefault(name, set()).add(str(file.relative_to(repo)))
-    return {name: {"read_in": sorted(files)[:3], "documented": re.search(rf"\b{name}\b", docs_text) is not None}
-            for name, files in sorted(names.items()) if name not in STANDARD_ENV}
+    result = {}
+    for name, files in sorted(names.items()):
+        if name in STANDARD_ENV:
+            continue
+        entry = {"read_in": sorted(files)[:3], "documented": re.search(rf"\b{name}\b", docs_text) is not None}
+        if name in FOREIGN_ENV or name.startswith(FOREIGN_PREFIXES):
+            entry["foreign"] = True
+        if name in DEVELOPER_ENV:
+            entry["developer_only"] = DEVELOPER_ENV[name]
+        result[name] = entry
+    return result
+
+
+def undocumented_env(report):
+    """The variables E7 asks to be documented: OpenMS's own, user-facing ones."""
+    return [n for n, v in report.items() if not (v["documented"] or v.get("foreign") or v.get("developer_only"))]
 
 
 def check_summary(section):
@@ -416,8 +466,10 @@ def main():
     if args.base:
         co = report["DOC-CMAKE-OPTIONS"]
         print(f"DOC-CMAKE-OPTIONS   new undocumented {co['added_undocumented']}; removed but documented {co['removed_still_documented']}")
-    undocumented_env = [n for n, v in report["DOC-ENV-VARS"].items() if not v["documented"]]
-    print(f"DOC-ENV-VARS        undocumented {undocumented_env}")
+    env = report["DOC-ENV-VARS"]
+    print(f"DOC-ENV-VARS        undocumented {undocumented_env(env)}; "
+          f"foreign {sorted(k for k, v in env.items() if v.get('foreign'))}; "
+          f"developer-only {sorted(k for k, v in env.items() if v.get('developer_only'))}")
     cl = report["CHANGELOG-LINT"]
     print(f"CHANGELOG-LINT      '{cl['heading']}': {cl['bullets']} bullets, {len(cl['duplicated_bullets'])} duplicated, "
           f"{len(cl['suspicious_short_continuation_lines'])} orphaned lines, sections twice: {cl['repeated_sections']}")
