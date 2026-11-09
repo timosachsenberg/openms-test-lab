@@ -302,7 +302,9 @@ def summary():
         if "skipped" not in co:
             row("E6 CMake options documented", not (co["added_undocumented"] or co["removed_still_documented"]),
                 f"undocumented {co['added_undocumented']}; removed but documented {co['removed_still_documented']}")
-        env_missing = [n for n, v in audit["DOC-ENV-VARS"].items() if not v["documented"]]
+        # Variables of the system, C library, OpenMP or BLAS, and developer-only switches, need no OpenMS docs
+        env_missing = [n for n, v in audit["DOC-ENV-VARS"].items()
+                       if not (v["documented"] or v.get("foreign") or v.get("developer_only"))]
         row("E7 environment variables documented", not env_missing, f"{env_missing}")
         cl = audit["CHANGELOG-LINT"]
         sm = cl.get("summary", {})

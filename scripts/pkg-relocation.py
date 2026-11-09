@@ -9,6 +9,8 @@ pkgbuild reads it only from the component plist it is given.
   upgrade  Check C8 of RELEASE-READINESS.md. Installs the previous release, makes its apps
            findable, installs the candidate over it, and reports where each of the
            candidate's apps landed and whether the previous release's apps were touched.
+           A candidate without app bundles (OpenMS after the GUI moved to OpenMS-TOPP-GUI,
+           OpenMS/OpenMS#10844) is reported as not applicable, with nothing installed.
   cpack    For PRs that change OpenMS's macOS packaging. Runs the packaging scripts of an
            OpenMS checkout (cmake/) through `cpack -G productbuild`, around three stub app
            bundles installed the way add_mac_app_bundle() installs TOPPView, TOPPAS and
@@ -181,7 +183,16 @@ def upgrade(args):
     if record["previous"]["sha256"] == record["candidate"]["sha256"]:
         raise RuntimeError("The previous release and the candidate are the same package")
     if not apps["candidate"]:
-        raise RuntimeError(f"The candidate installs no app under /Applications: {record['candidate']['file']}")
+        # Since OpenMS/OpenMS#10844 the OpenMS package carries no app bundles; TOPPView, TOPPAS and
+        # INIFileEditor come with the OpenMS-TOPP-GUI add-on, whose package C8 then has to test.
+        record.update(status="not applicable", passed=None,
+                      reason="the candidate installs no app bundles, so there is nothing to relocate "
+                             "(the GUI apps moved to the OpenMS-TOPP-GUI add-on, OpenMS/OpenMS#10844)")
+        write(report, record)
+        summary([f"### C8 · `{record['previous']['file']}` → `{record['candidate']['file']}`", "",
+                 f"- **C8 not applicable**: {record['reason']}",
+                 f"- relocatable in the candidate (F11): {listing(record['candidate']['relocatable'])}"])
+        return 0
     shared = {b for b in apps["candidate"] if apps["candidate"][b] == apps["previous"].get(b)}
     if shared:
         raise RuntimeError(f"Both packages install {sorted(shared)} at the same path, so C8 cannot tell them apart")
