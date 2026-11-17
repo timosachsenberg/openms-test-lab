@@ -225,7 +225,7 @@ A third job then times `FileConverter`, `NoiseFilterGaussian`, `PeakPickerHiRes`
 
 Read `avx-benchmark.md` on the run page or in the `avx-benchmark-report-*` artifact; `avx-benchmark.json` has every single run. The speed-up column gives the median and the range of the paired ratios: "faster in every pair" with the default seven repetitions still happens by chance about once in sixty-four, and a hosted runner easily adds a few percent of noise to a run of some seconds, so look at how far the whole range is from 1. The output column says whether a variant wrote the same numbers as the baseline (a SHA-256 over every computed value), which is the reason the flag was dropped.
 
-Binaries, vcpkg packages and the prepared input are cached per commit, variant and input, so a run that only changes the benchmark skips the builds. A first run builds the dependencies from source and takes a few hours. `scripts/avx-benchmark.py` runs off the runner as well, with an unpacked Linux package standing in for both variants; see its docstring.
+Binaries, vcpkg packages, the RAW file and the input prepared from it are cached per commit, variant and input, so a run that only changes the benchmark skips the builds and the download. A first run builds the dependencies from source and takes a few hours. `scripts/avx-benchmark.py` runs off the runner as well, with an unpacked Linux package standing in for both variants; see its docstring.
 
 ## Start a package lab
 

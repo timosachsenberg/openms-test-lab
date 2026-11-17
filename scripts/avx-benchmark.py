@@ -77,11 +77,36 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def tool_env(bin_dir, share_dir):
+def tool_registry(share_dir, work):
+    """Where the tools find the TOPP tool registry, or None if the data path already has it.
+
+    A tool looks its own name up in share/OpenMS/TOOLS/*.tsv and refuses to start without it.
+    OpenMS generates that file in the build tree, so the source checkout the data path points
+    at has none, and the build tree stayed on the build runner. The registry only says that a
+    tool exists and which TOPPAS category it is listed under: write one for the tools of this
+    benchmark. An installed share directory brings its own, and a second file naming the same
+    tools would be a collision.
+    """
+    if any((Path(share_dir) / "TOOLS").glob("*.tsv")):
+        return None
+    folder = Path(work) / "registry"
+    folder.mkdir(parents=True, exist_ok=True)
+    rows = [f"{tool}\tBenchmark" for tool in [name for name, *_ in STEPS] + HELPERS]
+    (folder / "avx-benchmark.tsv").write_text(
+        "# tool\tcategory (written by scripts/avx-benchmark.py)\n" + "\n".join(rows) + "\n",
+        "utf-8")
+    return folder
+
+
+def tool_env(bin_dir, share_dir, registry=None):
     """The environment of one tool: its own bin directory first, the data path of the commit."""
     env = dict(os.environ)
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     env["OPENMS_DATA_PATH"] = str(share_dir)
+    for name in ("OPENMS_TOOL_REGISTRY_PATH", "OPENMS_TTD_INTERNAL_PATH"):
+        env.pop(name, None)
+    if registry:
+        env["OPENMS_TOOL_REGISTRY_PATH"] = str(registry)
     # Otherwise a tool may ask the OpenMS server for a newer version when it starts, and the
     # round trip would be part of its wall time.
     env["OPENMS_DISABLE_UPDATE_CHECK"] = "ON"
@@ -309,17 +334,17 @@ def find_variant(directory):
     return {"name": info.get("variant", directory.name), "dir": directory, "build_info": info}
 
 
-def preflight(variants, share_dir, logs):
-    """Start one tool of every variant: a missing DLL shows here, not as a timing."""
+def preflight(variants, share_dir, registry, logs):
+    """Start one tool of every variant: a package that cannot run shows here, not as a timing."""
     for variant in variants:
         log_path = logs / f"preflight-{variant['name']}.log"
         result = timed_run([str(variant["dir"] / f"FileInfo{EXE}"), "--help"],
-                           tool_env(variant["dir"], share_dir), log_path)
+                           tool_env(variant["dir"], share_dir, registry), log_path)
         text = log_path.read_text("utf-8", "replace")
         if result["exit_code"] != 0 or "FileInfo" not in text:
             raise SystemExit(f"FileInfo of variant {variant['name']} does not start (exit code "
-                             f"{result['exit_code']:#x}); a runtime DLL is probably missing "
-                             f"next to it:\n{text[-2000:]}")
+                             f"{result['exit_code']:#x}). With no output below, a runtime DLL "
+                             f"is missing next to it:\n{text[-2000:]}")
 
 
 def prepare(args):
@@ -332,8 +357,9 @@ def prepare(args):
     for folder in (data, logs):
         folder.mkdir(parents=True, exist_ok=True)
     bin_dir, share_dir = Path(args.bin_dir).resolve(), Path(args.share_dir).resolve()
-    env = tool_env(bin_dir, share_dir)
-    preflight([find_variant(bin_dir)], share_dir, logs)
+    registry = tool_registry(share_dir, work)
+    env = tool_env(bin_dir, share_dir, registry)
+    preflight([find_variant(bin_dir)], share_dir, registry, logs)
     tool = lambda name: bin_dir / f"{name}{EXE}"
     raw = Path(args.raw).resolve()
     full, profile, centroided = data / "full.mzML", data / "profile.mzML", data / "centroided.mzML"
@@ -408,14 +434,17 @@ def run(args):
     if len(commits) != 1:
         raise SystemExit(f"The variants were built from different commits: {commits}")
     selected = [step for step in STEPS if not args.tools or step[0] in args.tools]
-    preflight(variants, share_dir, logs)
+    registry = tool_registry(share_dir, work)
+    preflight(variants, share_dir, registry, logs)
     dataset_file = data / "dataset.json"
     report = {
         "schema": 1, "issue": ISSUE, "openms_commit": commits.pop(), "host": host_info(),
         "settings": {"repetitions": args.repetitions, "warmup": args.warmup,
                      "threads": args.threads, "budget_minutes_per_tool": args.budget_minutes,
                      "order": "variants rotate from one repetition to the next",
-                     "priority": "high" if WINDOWS else "normal"},
+                     "priority": "high" if WINDOWS else "normal",
+                     "tool_registry": "written by the benchmark for its tools" if registry
+                     else "of the share directory"},
         "dataset": json.loads(dataset_file.read_text("utf-8")) if dataset_file.exists() else None,
         "variants": [{"name": variant["name"], **{key: variant["build_info"].get(key) for key in
                       ("arch_flag", "compiler_version", "build_type", "options", "compile_flags")}}
@@ -428,7 +457,7 @@ def run(args):
         target = out / f"{name}{suffix}"  # the same path for every variant: outputs name it
         command = [str(variant["dir"] / f"{name}{EXE}"), "-in", str(data / source), "-out",
                    str(target), "-threads", str(args.threads), "-no_progress"] + extra
-        result = timed_run(command, tool_env(variant["dir"], share_dir),
+        result = timed_run(command, tool_env(variant["dir"], share_dir, registry),
                            logs / f"{name}-{variant['name']}-{label}.log")
         log(f"  {name:<24} {variant['name']:<9} {label:<8} wall {result['wall_s']:8.2f} s  "
             f"cpu {result['cpu_user_s'] + result['cpu_kernel_s']:8.2f} s  "

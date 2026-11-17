@@ -227,8 +227,16 @@ jobs:
         with:
           path: work/data
           key: avx-bench-data-r${{ env.LAB_RECIPE }}-${{ env.LAB_OPENMS_COMMIT }}-${{ env.LAB_RAW_FILE }}-${{ env.LAB_RT_WINDOW }}
-      - name: Fetch the RAW file and the converter
+      # The download takes some twenty minutes: keep the file until the inputs made from it exist.
+      - name: Reuse the RAW file of an earlier run
+        id: raw
         if: ${{ steps.dataset.outputs.cache-hit != 'true' }}
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: downloads/raw
+          key: avx-bench-raw-${{ env.LAB_RAW_FILE }}-${{ env.LAB_RAW_SHA256 }}
+      - name: Fetch the RAW file
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' && steps.raw.outputs.cache-hit != 'true' }}
         run: |
           if ($env:LAB_RAW_FILE -notmatch '^[A-Za-z0-9_.-]+\.raw$') { throw 'raw_file is a file name of PXD003134.' }
           New-Item -ItemType Directory -Force downloads/raw | Out-Null
@@ -243,6 +251,20 @@ jobs:
             Start-Sleep -Seconds 20
           }
           if (-not $done) { throw 'The RAW file could not be downloaded.' }
+          # Checked here as well as by `prepare`, so that a damaged file is never kept.
+          $found = (Get-FileHash -Algorithm SHA256 "downloads/raw/$env:LAB_RAW_FILE").Hash.ToLower()
+          if ($env:LAB_RAW_SHA256 -ne 'none' -and $found -ne $env:LAB_RAW_SHA256.ToLower()) {
+            throw "$env:LAB_RAW_FILE has SHA-256 $found, expected $env:LAB_RAW_SHA256."
+          }
+      - name: Keep the RAW file for later runs
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' && steps.raw.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: downloads/raw
+          key: ${{ steps.raw.outputs.cache-primary-key }}
+      - name: Fetch the converter
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' }}
+        run: |
           $PSNativeCommandUseErrorActionPreference = $true
           # ThermoRawFileParser exactly as the benchmarked commit pins it (THIRDPARTY submodule).
           $thirdparty = (git -C _openms rev-parse HEAD:THIRDPARTY).Trim()
