@@ -217,6 +217,16 @@ The first native build in this repository has no existing compiler cache and can
 
 The standalone audit does not install pyOpenMS. Use **Windows DLL audit** for an existing pyOpenMS wheel plus an optional released desktop package. A successful build or startup check is not a clean-machine certification; inspect the runtime inventory and dependency findings.
 
+## Benchmark MSVC `/arch` flags
+
+[Windows AVX benchmark](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/windows-avx-benchmark.yml) answers [OpenMS/OpenMS#8845](https://github.com/OpenMS/OpenMS/issues/8845): what the Windows binaries lose now that OpenMS no longer passes `/arch:AVX` to MSVC. It builds one exact OpenMS commit with the `windows-x64-release` preset once as it is (`baseline`) and once per `/arch` value in `variants` (`AVX`, `AVX2`, `AVX512`), putting the flag back where [OpenMS/OpenMS#8787](https://github.com/OpenMS/OpenMS/pull/8787) removed it. Each build fails unless `compile_commands.json` shows the flag on the OpenMS sources (or on none of them, for the baseline).
+
+A third job then times `FileConverter`, `NoiseFilterGaussian`, `PeakPickerHiRes` and `FeatureFinderCentroided` of all builds **on one runner**: hosted runners differ in CPU, so timings from two machines cannot be compared. The variants alternate, a warm-up run precedes the timed ones, and repetition *i* of a variant is compared with repetition *i* of the baseline, which ran right next to it. The input is a RAW file of PRIDE project PXD003134 (HEK293, LTQ Orbitrap Velos), converted to profile mzML with the ThermoRawFileParser that the benchmarked commit pins, cut to `rt_window`, and centroided once with the baseline `PeakPickerHiRes`.
+
+Read `avx-benchmark.md` on the run page or in the `avx-benchmark-report-*` artifact; `avx-benchmark.json` has every single run. The speed-up column gives the median and the range of the paired ratios: "faster in every pair" with the default seven repetitions still happens by chance about once in sixty-four, and a hosted runner easily adds a few percent of noise to a run of some seconds, so look at how far the whole range is from 1. The output column says whether a variant wrote the same numbers as the baseline (a SHA-256 over every computed value), which is the reason the flag was dropped.
+
+Binaries, vcpkg packages and the prepared input are cached per commit, variant and input, so a run that only changes the benchmark skips the builds. A first run builds the dependencies from source and takes a few hours. `scripts/avx-benchmark.py` runs off the runner as well, with an unpacked Linux package standing in for both variants; see its docstring.
+
 ## Start a package lab
 
 1. Open [Actions → Windows package lab](https://github.com/timosachsenberg/openms-test-lab/actions/workflows/windows-lab.yml).

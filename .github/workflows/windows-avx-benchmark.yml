@@ -1,0 +1,299 @@
+name: Windows AVX benchmark
+run-name: MSVC /arch benchmark · ${{ inputs.openms_commit || 'default commit' }}
+
+# OpenMS/OpenMS#8845: OpenMS no longer passes /arch:AVX to MSVC. This builds one OpenMS commit
+# as it is ("baseline") and once per /arch value, then times TOPP tools of all builds on one
+# runner, interleaved. scripts/avx-benchmark.py holds the patch, the tool list and the timing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      openms_commit:
+        description: Exact OpenMS/OpenMS commit SHA to build (40 hexadecimal characters)
+        required: true
+        default: '601776c82f8b0b53cf3aff7e3672c29d5a5d1ead'
+        type: string
+      variants:
+        description: JSON list of builds - baseline (as is) and MSVC /arch values (AVX, AVX2, AVX512)
+        default: '["baseline","AVX"]'
+        type: string
+      raw_file:
+        description: RAW file of PRIDE project PXD003134
+        default: 20101227_Velos1_TaGe_SA_HEK293_02.raw
+        type: string
+      raw_sha256:
+        description: SHA-256 the RAW file must have, or none to skip the check (PRIDE publishes none)
+        default: c4e3336ebd5bc22402871c1b58e930c04463fc4bc424b9377861f8b50032c0a0
+        type: string
+      rt_window:
+        description: Retention time window in seconds (start:end), or all for the whole run
+        default: '6000:9000'
+        type: string
+      repetitions:
+        description: Timed runs per tool and variant
+        default: '7'
+        type: string
+      threads:
+        description: Value of -threads for every tool
+        default: '1'
+        type: string
+  # A workflow can only be dispatched once it is on the default branch. Until then a push to
+  # this branch starts it with the defaults; drop this trigger when the file is merged.
+  push:
+    branches:
+      - claude/windows-avx-benchmark
+    paths:
+      - .github/workflows/windows-avx-benchmark.yml
+      - scripts/avx-benchmark.py
+
+permissions:
+  contents: read
+
+env:
+  LAB_OPENMS_COMMIT: ${{ inputs.openms_commit || '601776c82f8b0b53cf3aff7e3672c29d5a5d1ead' }}
+  LAB_RAW_FILE: ${{ inputs.raw_file || '20101227_Velos1_TaGe_SA_HEK293_02.raw' }}
+  LAB_RAW_SHA256: ${{ inputs.raw_sha256 || 'c4e3336ebd5bc22402871c1b58e930c04463fc4bc424b9377861f8b50032c0a0' }}
+  LAB_RT_WINDOW: ${{ inputs.rt_window || '6000:9000' }}
+  LAB_REPETITIONS: ${{ inputs.repetitions || '7' }}
+  LAB_THREADS: ${{ inputs.threads || '1' }}
+  # Release build with the default features: what a developer gets from the documented preset.
+  LAB_PRESET: windows-x64-release
+  # Part of every cache key. Raise it when the build or the data preparation changes, so that
+  # binaries and inputs made by the old recipe are not reused.
+  LAB_RECIPE: '1'
+  PYTHONUTF8: '1'
+
+jobs:
+  build:
+    name: Build · ${{ matrix.variant }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.variants || '["baseline","AVX"]') }}
+    runs-on: windows-2025
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      LAB_VARIANT: ${{ matrix.variant }}
+    steps:
+      - name: Validate the request
+        run: |
+          if ($env:LAB_OPENMS_COMMIT -notmatch '^[0-9a-fA-F]{40}$') { throw 'Provide a full commit SHA.' }
+          if ($env:LAB_VARIANT -notmatch '^(baseline|AVX|AVX2|AVX512)$') { throw "Unknown variant '$env:LAB_VARIANT'." }
+      - name: Check out the exact OpenMS source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.LAB_OPENMS_COMMIT }}
+          persist-credentials: false
+      - name: Check out lab helpers
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: _lab
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      # A run that only changes the benchmark does not build OpenMS again.
+      - name: Reuse the binaries of an earlier run
+        id: binaries
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: _lab/exports/bin
+          key: avx-bench-bin-r${{ env.LAB_RECIPE }}-${{ env.LAB_OPENMS_COMMIT }}-${{ matrix.variant }}
+      - name: Enter the Visual Studio x64 shell
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        uses: egor-tensin/vs-shell@7710434f30f873ff4ab78184b74cc576a10726d6 # v2.2.3
+        with:
+          arch: x64
+      - name: Get vcpkg as pinned by OpenMS
+        id: vcpkg
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git submodule update --init vcpkg
+          ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          New-Item -ItemType Directory -Force .vcpkg-cache | Out-Null
+          # A Visual Studio shell may point VCPKG_ROOT at the copy that ships with Visual Studio.
+          "VCPKG_ROOT=$env:GITHUB_WORKSPACE\vcpkg" >> $env:GITHUB_ENV
+          "VCPKG_BINARY_SOURCES=clear;files,$env:GITHUB_WORKSPACE/.vcpkg-cache,readwrite" >> $env:GITHUB_ENV
+          "sha=$((git -C vcpkg rev-parse HEAD).Trim())" >> $env:GITHUB_OUTPUT
+      - name: Reuse the vcpkg packages of an earlier run
+        id: vcpkg-cache
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .vcpkg-cache
+          key: avx-bench-vcpkg-${{ env.LAB_PRESET }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-overlays/**') }}
+      - name: Re-enable the /arch flag
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' && matrix.variant != 'baseline' }}
+        run: python _lab/scripts/avx-benchmark.py patch --openms . --arch $env:LAB_VARIANT
+      - name: Configure (vcpkg builds the dependencies)
+        id: configure
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            python -m pip install --disable-pip-version-check ninja
+          }
+          cmake --version
+          ninja --version
+          # Left out because the benchmark does not touch them: tests, documentation, and the
+          # Thermo and Bruker readers, which are fetched and built from other repositories.
+          # None of this changes how the library code that is timed gets compiled.
+          cmake --preset $env:LAB_PRESET -DENABLE_DOCS=OFF -DENABLE_CLASS_TESTING=OFF -DENABLE_TOPP_TESTING=OFF `
+            -DWITH_THERMO_RAW=OFF -DWITH_OPENTIMS=OFF
+      # Saved as soon as the dependencies exist, so a failing OpenMS build keeps them.
+      - name: Keep the vcpkg packages for later runs
+        if: ${{ !cancelled() && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      - name: Build the benchmarked tools
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $targets = (python _lab/scripts/avx-benchmark.py targets) -split ' '
+          cmake --build --preset $env:LAB_PRESET --target $targets
+      - name: Collect the tools and record how they were compiled
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python _lab/scripts/avx-benchmark.py package --build-dir "build/$env:LAB_PRESET" --openms . --variant $env:LAB_VARIANT --out _lab/exports/bin
+      - name: Keep the binaries for later runs
+        if: ${{ steps.binaries.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: _lab/exports/bin
+          key: ${{ steps.binaries.outputs.cache-primary-key }}
+      - name: Upload the binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: avx-bench-bin-${{ matrix.variant }}-${{ github.run_id }}
+          path: _lab/exports/bin/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload the build logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: avx-bench-build-logs-${{ matrix.variant }}-${{ github.run_id }}
+          path: |
+            build/${{ env.LAB_PRESET }}/vcpkg-manifest-install.log
+            build/${{ env.LAB_PRESET }}/vcpkg-bootstrap.log
+            build/${{ env.LAB_PRESET }}/CMakeFiles/CMakeConfigureLog.yaml
+            vcpkg/buildtrees/*/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  benchmark:
+    name: Benchmark on one runner
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      # The tools read their chemistry and CV tables from share/OpenMS; the build tree that
+      # the binaries point to does not exist on this runner.
+      - name: Check out share/OpenMS of the benchmarked commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.LAB_OPENMS_COMMIT }}
+          path: _openms
+          sparse-checkout: share/OpenMS
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Download the binaries of every variant
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: avx-bench-bin-*-${{ github.run_id }}
+          path: downloads/bin
+      - name: Reuse the benchmark inputs of an earlier run
+        id: dataset
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: work/data
+          key: avx-bench-data-r${{ env.LAB_RECIPE }}-${{ env.LAB_OPENMS_COMMIT }}-${{ env.LAB_RAW_FILE }}-${{ env.LAB_RT_WINDOW }}
+      - name: Fetch the RAW file and the converter
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' }}
+        run: |
+          if ($env:LAB_RAW_FILE -notmatch '^[A-Za-z0-9_.-]+\.raw$') { throw 'raw_file is a file name of PXD003134.' }
+          New-Item -ItemType Directory -Force downloads/raw | Out-Null
+          # The PRIDE server drops long transfers now and then: resume instead of starting over.
+          $done = $false
+          foreach ($attempt in 1..10) {
+            curl.exe --fail --location --silent --show-error --continue-at - `
+              --output "downloads/raw/$env:LAB_RAW_FILE" `
+              "https://ftp.pride.ebi.ac.uk/pride/data/archive/2015/11/PXD003134/$env:LAB_RAW_FILE"
+            if ($LASTEXITCODE -eq 0) { $done = $true; break }
+            Write-Host "Download attempt $attempt stopped with curl exit code $LASTEXITCODE; resuming."
+            Start-Sleep -Seconds 20
+          }
+          if (-not $done) { throw 'The RAW file could not be downloaded.' }
+          $PSNativeCommandUseErrorActionPreference = $true
+          # ThermoRawFileParser exactly as the benchmarked commit pins it (THIRDPARTY submodule).
+          $thirdparty = (git -C _openms rev-parse HEAD:THIRDPARTY).Trim()
+          git init --quiet downloads/thirdparty
+          git -C downloads/thirdparty remote add origin https://github.com/OpenMS/THIRDPARTY
+          git -C downloads/thirdparty sparse-checkout set All/ThermoRawFileParser
+          git -C downloads/thirdparty fetch --quiet --depth 1 --filter=blob:none origin $thirdparty
+          git -C downloads/thirdparty checkout --quiet FETCH_HEAD
+      - name: Convert the RAW file and make the centroided input
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python scripts/avx-benchmark.py prepare `
+            --bin-dir "downloads/bin/avx-bench-bin-baseline-$env:GITHUB_RUN_ID" `
+            --share-dir _openms/share/OpenMS `
+            --raw "downloads/raw/$env:LAB_RAW_FILE" --raw-sha256 $env:LAB_RAW_SHA256 --source 'PRIDE PXD003134' `
+            --converter downloads/thirdparty/All/ThermoRawFileParser/ThermoRawFileParser.exe `
+            --rt-window $env:LAB_RT_WINDOW --work work
+      - name: Keep the benchmark inputs for later runs
+        if: ${{ steps.dataset.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: work/data
+          key: ${{ steps.dataset.outputs.cache-primary-key }}
+      # Real-time scanning of what the tools read and write would be timed with them.
+      - name: Exclude the workspace from Defender scanning
+        continue-on-error: true
+        run: |
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
+          Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled | Format-List
+      - name: Time every tool, variants interleaved
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $variants = Get-ChildItem downloads/bin -Directory | ForEach-Object FullName
+          python scripts/avx-benchmark.py run --variant-dir $variants --share-dir _openms/share/OpenMS `
+            --work work --repetitions $env:LAB_REPETITIONS --threads $env:LAB_THREADS
+      - name: Show the result on the run page
+        if: ${{ !cancelled() }}
+        run: |
+          if (Test-Path reports/avx-benchmark.md) {
+            Get-Content reports/avx-benchmark.md -Raw | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Upload the report, the logs and the build records
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: avx-benchmark-report-${{ github.run_id }}
+          path: |
+            reports/
+            work/logs/
+            work/data/dataset.json
+            downloads/bin/*/build-info.json
+          retention-days: 30
+          if-no-files-found: warn
