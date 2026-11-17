@@ -3,11 +3,13 @@
 OpenMS dropped /arch:AVX for MSVC because the 256-bit Eigen reductions rounded differently
 from the 128-bit ones GCC and Clang use (cmake/compiler_flags.cmake). Whether that costs the
 Windows binaries anything was never measured. The Windows AVX benchmark workflow builds the
-same OpenMS commit once as it is ("baseline") and once per /arch: value, and this script does
-the parts of that which are worth testing off the runner:
+same OpenMS commit once as it is ("baseline") and once per variant, and this script does
+the parts of that which are worth testing off the runner. A variant is an /arch: value
+(AVX, AVX2, AVX512) or SIMDE_SSSE3, which keeps the default /arch and only lets SIMDe use
+the SSSE3 intrinsics instead of emulating them.
 
     targets                 print the build targets the benchmark needs
-    patch                   put /arch:<value> back into cmake/compiler_flags.cmake
+    patch                   add the flag of a variant to cmake/compiler_flags.cmake
     package                 collect the built tools and record how they were compiled
     prepare                 turn a Thermo RAW file into the benchmark inputs
     run                     time every tool, variants interleaved, and write the report
@@ -38,15 +40,21 @@ EXE = ".exe" if WINDOWS else ""
 ISSUE = "https://github.com/OpenMS/OpenMS/issues/8845"
 BASELINE = "baseline"
 ARCH_VALUES = {"AVX", "AVX2", "AVX512"}
+# OpenMS codes Base64 and transcodes XML strings with SSSE3 intrinsics through SIMDe. GCC and
+# Clang get -mssse3. MSVC x64 has no macro that announces SSSE3 below /arch:AVX, so SIMDe
+# emulates those intrinsics byte by byte unless this macro tells it to use them; MSVC compiles
+# them without any /arch flag. The variant separates that effect from the rest of /arch:AVX.
+SIMDE_SSSE3 = "SIMDE_SSSE3"
+SIMDE_DEFINE = "SIMDE_X86_SSSE3_NATIVE"
 
 # The two lines OpenMS/OpenMS#8787 left in cmake/compiler_flags.cmake, and what stood there
-# before it. Matched exactly: if upstream rewrites the block, the build must stop, not time
-# two identical binaries.
+# before it, with the flag of the variant. Matched exactly: if upstream rewrites the block,
+# the build must stop, not time two identical binaries.
 FLAGS_FILE = "cmake/compiler_flags.cmake"
 SIMD_NOW = ('  if(NOT MSVC AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "${x64_CPU}")\n'
             '    target_compile_options(${target_name} PUBLIC -mssse3)\n')
-SIMD_WITH_ARCH = ('  if(MSVC AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "${x64_CPU}")\n'
-                  '    target_compile_options(${target_name} PUBLIC /arch:@ARCH@)\n'
+SIMD_WITH_FLAG = ('  if(MSVC AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "${x64_CPU}")\n'
+                  '    target_compile_options(${target_name} PUBLIC @FLAG@)\n'
                   '  elseif(NOT MSVC AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "${x64_CPU}")\n'
                   '    target_compile_options(${target_name} PUBLIC -mssse3)\n')
 
@@ -67,6 +75,18 @@ HELPERS = ["FileFilter", "FileInfo"]  # used by `prepare` and the smoke test, no
 
 def log(message):
     print(message, flush=True)
+
+
+def variant_flag(variant):
+    """What a variant adds to the MSVC x64 compile line; nothing for the baseline."""
+    if variant == BASELINE:
+        return None
+    if variant in ARCH_VALUES:
+        return f"/arch:{variant}"
+    if variant == SIMDE_SSSE3:
+        return f"/D{SIMDE_DEFINE}"
+    raise SystemExit(f"Unknown variant '{variant}': use {BASELINE}, {SIMDE_SSSE3} or one of "
+                     f"{sorted(ARCH_VALUES)}")
 
 
 def sha256(path):
@@ -212,30 +232,43 @@ def host_info():
 # --- patch ---------------------------------------------------------------------------------
 
 def patch(args):
-    if args.arch not in ARCH_VALUES:
-        raise SystemExit(f"--arch must be one of {sorted(ARCH_VALUES)}")
+    flag = variant_flag(args.variant)
+    if not flag:
+        raise SystemExit(f"The {BASELINE} is the source as it is: nothing to patch.")
     path = Path(args.openms) / FLAGS_FILE
     text = path.read_text("utf-8")
-    if text.count(SIMD_NOW) != 1 or "/arch:" in text.replace("do NOT use /arch:AVX", ""):
+    if (text.count(SIMD_NOW) != 1 or "/arch:" in text.replace("do NOT use /arch:AVX", "")
+            or SIMDE_DEFINE in text):
         raise SystemExit(f"{path} no longer has the SIMD block this patch expects; "
                          "compare it with OpenMS/OpenMS#8787 and update SIMD_NOW.")
-    path.write_text(text.replace(SIMD_NOW, SIMD_WITH_ARCH.replace("@ARCH@", args.arch)),
+    path.write_text(text.replace(SIMD_NOW, SIMD_WITH_FLAG.replace("@FLAG@", flag)),
                     "utf-8", newline="\n")
-    log(f"{FLAGS_FILE}: MSVC x64 targets now compile with /arch:{args.arch}")
+    log(f"{FLAGS_FILE}: MSVC x64 targets now compile with {flag}")
 
 
 # --- package -------------------------------------------------------------------------------
 
 def compile_flags(build_dir):
-    """How many translation units were compiled, and with which /arch: value."""
+    """How many translation units were compiled, with which /arch: value and SIMDe macro."""
     commands = json.loads((Path(build_dir) / "compile_commands.json").read_text("utf-8"))
-    counts = {}
+    counts, defined = {}, 0
     for entry in commands:
         line = entry.get("command") or " ".join(entry.get("arguments", []))
         found = re.findall(r"[/-]arch:(\S+)", line)
         key = found[-1].strip('"') if found else "none"
         counts[key] = counts.get(key, 0) + 1
-    return {"translation_units": len(commands), "arch_flag": counts}
+        defined += bool(re.search(rf"[/-]D ?{SIMDE_DEFINE}\b", line))
+    return {"translation_units": len(commands), "arch_flag": counts,
+            "defines": {SIMDE_DEFINE: defined}}
+
+
+def flagged_units(flag, flags):
+    """Of the counts of compile_flags(), the translation units that carry a variant's flag."""
+    if not flag:
+        return 0
+    if flag.startswith("/arch:"):
+        return flags.get("arch_flag", {}).get(flag[len("/arch:"):], 0)
+    return flags.get("defines", {}).get(flag[len("/D"):], 0)
 
 
 def cache_value(build_dir, name):
@@ -248,16 +281,17 @@ def package(args):
     build_dir, out = Path(args.build_dir), Path(args.out)
     bin_dir = build_dir / "bin"
     flags = compile_flags(build_dir)
-    expected = "none" if args.variant == BASELINE else args.variant
-    total, plain = flags["translation_units"], flags["arch_flag"].get("none", 0)
-    # The whole point of a variant: if the flag did not reach the compiler (or reached the
-    # baseline), stop here instead of timing two builds of the same code. Vendored libraries
-    # set their own flags, so "most of the sources" is the test, not "all".
-    wrong = (total - plain) * 20 > total if args.variant == BASELINE else (
-        flags["arch_flag"].get(expected, 0) * 2 < total)
-    if total < 100 or wrong:
-        raise SystemExit(f"Variant {args.variant}: expected /arch:{expected} on the OpenMS "
-                         f"sources, found {flags['arch_flag']}")
+    flag = variant_flag(args.variant)
+    total = flags["translation_units"]
+    # The whole point of a variant: if its flag did not reach the compiler, or another
+    # variant's flag did, stop here instead of timing two builds of the same code. Vendored
+    # libraries set their own flags, so "most of the sources" is the test, not "all".
+    has_own = flagged_units(flag, flags) * 2 >= total if flag else True
+    others = (total - flags["arch_flag"].get("none", 0) + flags["defines"][SIMDE_DEFINE]
+              - flagged_units(flag, flags))
+    if total < 100 or not has_own or others * 20 > total:
+        raise SystemExit(f"Variant {args.variant}: expected {flag or 'no SIMD flag'} on the "
+                         f"OpenMS sources, found {flags['arch_flag']} and {flags['defines']}")
     out.mkdir(parents=True, exist_ok=True)
     tools = [name for name, *_ in STEPS] + HELPERS
     for tool in tools:
@@ -271,8 +305,8 @@ def package(args):
         compiler = found.group(1) if found else compiler
     commit = subprocess.run(["git", "-C", args.openms, "rev-parse", "HEAD"], check=True,
                             capture_output=True, text=True).stdout.strip()
-    info = {"variant": args.variant, "arch_flag": None if args.variant == BASELINE else
-            f"/arch:{args.variant}", "openms_commit": commit, "compiler_version": compiler,
+    info = {"variant": args.variant, "flag": flag, "openms_commit": commit,
+            "compiler_version": compiler,
             "build_type": cache_value(build_dir, "CMAKE_BUILD_TYPE"),
             "vcpkg_triplet": cache_value(build_dir, "VCPKG_TARGET_TRIPLET"),
             "options": {name: cache_value(build_dir, name) for name in (
@@ -438,7 +472,7 @@ def run(args):
     preflight(variants, share_dir, registry, logs)
     dataset_file = data / "dataset.json"
     report = {
-        "schema": 1, "issue": ISSUE, "openms_commit": commits.pop(), "host": host_info(),
+        "schema": 2, "issue": ISSUE, "openms_commit": commits.pop(), "host": host_info(),
         "settings": {"repetitions": args.repetitions, "warmup": args.warmup,
                      "threads": args.threads, "budget_minutes_per_tool": args.budget_minutes,
                      "order": "variants rotate from one repetition to the next",
@@ -446,8 +480,11 @@ def run(args):
                      "tool_registry": "written by the benchmark for its tools" if registry
                      else "of the share directory"},
         "dataset": json.loads(dataset_file.read_text("utf-8")) if dataset_file.exists() else None,
-        "variants": [{"name": variant["name"], **{key: variant["build_info"].get(key) for key in
-                      ("arch_flag", "compiler_version", "build_type", "options", "compile_flags")}}
+        # "arch_flag" is what packages made before the SIMDe variant existed call the flag.
+        "variants": [{"name": variant["name"], "flag": variant["build_info"].get(
+                          "flag", variant["build_info"].get("arch_flag")),
+                      **{key: variant["build_info"].get(key) for key in
+                         ("compiler_version", "build_type", "options", "compile_flags")}}
                      for variant in variants],
         "tools": [],
     }
@@ -459,7 +496,7 @@ def run(args):
                    str(target), "-threads", str(args.threads), "-no_progress"] + extra
         result = timed_run(command, tool_env(variant["dir"], share_dir, registry),
                            logs / f"{name}-{variant['name']}-{label}.log")
-        log(f"  {name:<24} {variant['name']:<9} {label:<8} wall {result['wall_s']:8.2f} s  "
+        log(f"  {name:<24} {variant['name']:<12} {label:<8} wall {result['wall_s']:8.2f} s  "
             f"cpu {result['cpu_user_s'] + result['cpu_kernel_s']:8.2f} s  "
             f"peak {result['peak_mb']:7.0f} MB  exit {result['exit_code']}")
         if result["exit_code"] != 0:
@@ -531,7 +568,7 @@ def markdown(report):
     features = ", ".join(f"{name.upper()} {'yes' if present else 'no'}"
                          for name, present in host["cpu_features"].items())
     lines = [
-        f"## MSVC /arch: benchmark · OpenMS `{(report['openms_commit'] or '?')[:10]}`", "",
+        f"## MSVC SIMD flag benchmark · OpenMS `{(report['openms_commit'] or '?')[:10]}`", "",
         f"For [OpenMS/OpenMS#8845]({ISSUE}). All variants ran on one machine: "
         f"**{host['cpu']}**, {host['logical_cpus']} logical CPUs ({features}), {host['os']}"
         + (f", runner image {host['runner_image']}" if host.get("runner_image") else "") + ".", "",
@@ -549,12 +586,11 @@ def markdown(report):
     lines += ["| Variant | Compiler flag | MSVC | Translation units with the flag |",
               "| --- | --- | --- | --- |"]
     for variant in report["variants"]:
-        flags = (variant.get("compile_flags") or {}).get("arch_flag", {})
-        key = (variant.get("arch_flag") or "").replace("/arch:", "") or "none"
-        total = (variant.get("compile_flags") or {}).get("translation_units", "?")
-        lines.append(f"| {variant['name']} | {variant.get('arch_flag') or '(none: SSE2)'} | "
+        flags = variant.get("compile_flags") or {}
+        lines.append(f"| {variant['name']} | {variant.get('flag') or '(none: SSE2)'} | "
                      f"{variant.get('compiler_version') or '?'} | "
-                     f"{flags.get(key, '?') if variant.get('arch_flag') else 0} of {total} |")
+                     f"{flagged_units(variant.get('flag'), flags)} of "
+                     f"{flags.get('translation_units', '?')} |")
     lines += ["", "| Tool | Variant | Wall median [s] | Wall min – max [s] | CV | CPU median [s] | "
               "Peak RAM [MB] | Speed-up vs baseline (wall) | Output |",
               "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
@@ -592,9 +628,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("targets", help="print the build targets the benchmark needs")
-    sub = commands.add_parser("patch", help="re-enable /arch:<value> for MSVC in an OpenMS checkout")
+    sub = commands.add_parser("patch", help="add a variant's MSVC flag to an OpenMS checkout")
     sub.add_argument("--openms", required=True)
-    sub.add_argument("--arch", required=True)
+    sub.add_argument("--variant", required=True)
     sub = commands.add_parser("package", help="collect the built tools and their build record")
     sub.add_argument("--build-dir", required=True)
     sub.add_argument("--openms", required=True)
